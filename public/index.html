@@ -14,29 +14,31 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: space-between;
+      padding: 20px;
     }
-    .container {
+    .main-container {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 30px;
-      text-align: center;
-      max-width: 500px;
-      padding: 20px;
+      gap: 15px;
+      width: 100%;
+      max-width: 600px;
+      margin-top: 10px;
     }
     .orb {
-      width: 180px;
-      height: 180px;
+      width: 140px;
+      height: 140px;
       border-radius: 50%;
       background: radial-gradient(circle, #00d2ff 0%, #0072ff 100%);
       box-shadow: 0 0 50px rgba(0, 210, 255, 0.4);
       transition: all 0.5s ease;
+      flex-shrink: 0;
     }
     .orb.recording {
       background: radial-gradient(circle, #ff416c 0%, #ff4b2b 100%);
       box-shadow: 0 0 70px rgba(255, 65, 108, 0.7);
-      transform: scale(1.1);
+      transform: scale(1.08);
     }
     .orb.thinking {
       background: radial-gradient(circle, #f7b731 0%, #ffa801 100%);
@@ -50,53 +52,79 @@
     }
     @keyframes pulse {
       0% { transform: scale(1); }
-      100% { transform: scale(1.08); }
+      100% { transform: scale(1.06); }
     }
     .status {
-      font-size: 1.1rem;
+      font-size: 1rem;
       color: #a0a5b5;
-      min-height: 24px;
     }
-    .transcript {
-      font-size: 0.95rem;
-      color: #d1d5db;
-      background: rgba(255, 255, 255, 0.05);
-      padding: 12px 18px;
-      border-radius: 12px;
+    .chat-history {
       width: 100%;
-      display: none;
+      max-width: 600px;
+      flex-grow: 1;
+      overflow-y: auto;
+      margin: 15px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 5px;
+    }
+    .msg {
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      max-width: 85%;
+      word-wrap: break-word;
+    }
+    .msg.user {
+      background: #2563eb;
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.assistant {
+      background: rgba(255, 255, 255, 0.08);
+      color: #e5e7eb;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     button {
       background: #2563eb;
       color: white;
       border: none;
-      padding: 14px 28px;
+      padding: 14px 32px;
       font-size: 1rem;
       font-weight: 600;
       border-radius: 30px;
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
+      margin-bottom: 10px;
     }
     button:hover { background: #1d4ed8; }
     button:disabled { background: #4b5563; cursor: not-allowed; transform: none; }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="main-container">
     <div id="orb" class="orb"></div>
     <div id="status" class="status">Нажмите для начала разговора</div>
-    <div id="transcript" class="transcript"></div>
-    <button id="actionBtn">Начать разговор</button>
   </div>
+
+  <div id="chatHistory" class="chat-history"></div>
+
+  <button id="actionBtn">Начать разговор</button>
 
   <script>
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
+    let conversationHistory = []; // Сохраняем историю переписки
 
     const orb = document.getElementById('orb');
     const statusText = document.getElementById('status');
-    const transcriptText = document.getElementById('transcript');
+    const chatHistory = document.getElementById('chatHistory');
     const actionBtn = document.getElementById('actionBtn');
 
     actionBtn.addEventListener('click', async () => {
@@ -125,24 +153,38 @@
         isRecording = false;
 
         orb.className = 'orb thinking';
-        statusText.textContent = 'Думаю и озвучиваю...';
+        statusText.textContent = 'Думаю и озавучиваю...';
         actionBtn.disabled = true;
         actionBtn.textContent = 'Обработка...';
       }
     });
 
+    function addMessageToUI(role, text) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `msg ${role}`;
+      msgDiv.textContent = text;
+      chatHistory.appendChild(msgDiv);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
     async function sendAudio() {
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('history', JSON.stringify(conversationHistory));
 
       try {
         const response = await fetch('/api/voice', { method: 'POST', body: formData });
         const data = await response.json();
 
         if (data.audio) {
-          transcriptText.style.display = 'block';
-          transcriptText.textContent = `Вы: "${data.userText}"`;
+          // Выводим в интерфейс сообщения
+          addMessageToUI('user', `Вы: ${data.userText}`);
+          addMessageToUI('assistant', `ARP: ${data.text}`);
+
+          // Обновляем массив истории
+          conversationHistory.push({ role: 'user', content: data.userText });
+          conversationHistory.push({ role: 'assistant', content: data.text });
 
           orb.className = 'orb speaking';
           statusText.textContent = 'Ассистент говорит...';
@@ -152,9 +194,9 @@
 
           audio.onended = () => {
             orb.className = 'orb';
-            statusText.textContent = 'Нажмите для начала разговора';
+            statusText.textContent = 'Нажмите для ответа';
             actionBtn.disabled = false;
-            actionBtn.textContent = 'Начать разговор';
+            actionBtn.textContent = 'Ответить';
           };
         } else {
           throw new Error('Ошибка сервера');
