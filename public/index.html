@@ -1,0 +1,132 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Voice ARP AI</title>
+  <style>
+    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #121212; color: #fff; margin: 0; }
+    .card { background: #1e1e1e; padding: 2rem; border-radius: 12px; text-align: center; width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 25px; cursor: pointer; margin-top: 1rem; transition: 0.2s; }
+    button.recording { background: #dc3545; }
+    button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
+    .status { margin-top: 1rem; font-size: 14px; color: #aaa; }
+    .chat { margin-top: 1.5rem; text-align: left; font-size: 14px; max-height: 220px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Voice ARP AI</h2>
+    <button id="recordBtn">🎤 Зажать и говорить</button>
+    <div class="status" id="status">Готов к работе</div>
+    <div class="chat" id="chat"></div>
+  </div>
+
+  <script>
+    const recordBtn = document.getElementById('recordBtn');
+    const status = document.getElementById('status');
+    const chat = document.getElementById('chat');
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let startTime = 0;
+    let currentAudio = null; // Храним текущий звучащий аудиопоток
+
+    recordBtn.addEventListener('mousedown', startRecording);
+    recordBtn.addEventListener('mouseup', stopRecording);
+
+    async function startRecording() {
+      if (recordBtn.disabled) return;
+
+      // Если бот ещё говорит от прошлого ответа — глушим его
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        startTime = Date.now();
+
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+        mediaRecorder.onstop = sendAudio;
+
+        mediaRecorder.start();
+        recordBtn.classList.add('recording');
+        recordBtn.innerText = '🔴 Запись...';
+        status.innerText = 'Слушаю...';
+      } catch (err) {
+        alert('Ошибка доступа к микрофону: ' + err.message);
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        const duration = Date.now() - startTime;
+        
+        if (duration < 600) {
+          mediaRecorder.onstop = null;
+          mediaRecorder.stop();
+          recordBtn.classList.remove('recording');
+          recordBtn.innerText = '🎤 Зажать и говорить';
+          status.innerText = 'Запись слишком короткая!';
+          return;
+        }
+
+        mediaRecorder.stop();
+        recordBtn.classList.remove('recording');
+        recordBtn.innerText = '⏳ Обработка...';
+        recordBtn.disabled = true; // Запрещаем нажатия, пока бот думает
+        status.innerText = 'Думаю и озвучиваю...';
+      }
+    }
+
+    async function sendAudio() {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = reader.result.split(',')[1];
+        try {
+          const res = await fetch('/api/voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioData: base64Audio })
+          });
+          
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+
+          chat.innerHTML += `<p><b>Вы:</b> ${data.userText}</p>`;
+          chat.innerHTML += `<p><b>ARP:</b> ${data.replyText}</p>`;
+          chat.scrollTop = chat.scrollHeight;
+
+          if (data.audioBase64) {
+            currentAudio = new Audio('data:audio/mp3;base64,' + data.audioBase64);
+            
+            // Как только аудио закончило играть — разблокируем кнопку
+            currentAudio.onended = () => {
+              recordBtn.disabled = false;
+              recordBtn.innerText = '🎤 Зажать и говорить';
+              status.innerText = 'Готов к работе';
+            };
+
+            await currentAudio.play();
+          } else {
+            recordBtn.disabled = false;
+            recordBtn.innerText = '🎤 Зажать и говорить';
+            status.innerText = 'Готов к работе';
+          }
+
+        } catch (err) {
+          status.innerText = 'Ошибка обработки';
+          console.error(err);
+          recordBtn.disabled = false;
+          recordBtn.innerText = '🎤 Зажать и говорить';
+        }
+      };
+    }
+  </script>
+</body>
+</html>
