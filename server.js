@@ -90,7 +90,7 @@ app.post('/api/voice', async (req, res) => {
     // 3. Озвучивание ответа (TTS-1-HD с мужским голосом echo)
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1-hd',
-      voice: 'echo',
+      voice: 'onyx',
       input: replyText,
       speed: 0.95
     });
