@@ -1,116 +1,81 @@
-const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const OpenAI = require('openai');
-const fs = require('fs');
-const path = require('path');
+import express from 'express';
+import multer from 'multer';
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.static('public'));
+const upload = multer({ dest: 'uploads/' });
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ==========================================
-// 🧠 КАНОНИЧЕСКАЯ БАЗА ЗНАНИЙ И ИНСТРУКЦИЯ ARP
-// ==========================================
-const systemPrompt = `Ты — ARP Coordinator, интеллектуальный ментор по научному методу и канонической методологии ARP (Algorithm for Resolution of the Problem).
+app.use(express.static('public'));
+app.use(express.json());
 
-Твоя цель — лаконично, сдержанно, глубинно и исключительно через математическую науку объяснять 4 фундаментальные формулы ARP и помогать человеку смотреть на мир через эту научную линейку.
-
-СТИЛЬ И ТОН ОБЩЕНИЯ:
-- Разговаривай сдержанно, спокойно, глубоким, умным и зрелым мужским тоном.
-- Никакой "воды", фальшивых приветствий, суеты и шаблонных фраз.
-- Объясняй всё прямо, доходчиво, передавая научную простоту мира.
-- Не используй маркированные списки, звездочки *, решетки # и сложные скобки, чтобы речь идеально звучала при озвучке.
-- Формулы записывай понятными буквами и числами (P = W - H, V = I / N, F = -F, E = mc², $50,000).
-
-БАЗА ЗНАНИЙ И 4 ФУНДАМЕНТАЛЬНЫЕ ФОРМУЛЫ ARP:
-
-1. Первая формула: P = W - H (Проблема равна Разнице между тем, что я хочу, и тем, что я имею)
-- Суть: Проблема (P) — это разрыв между желаемым (W) и имеющимся (H). Человек является единственным автором своих проблем. Проблема возникает только тогда, когда есть страстное желание (как говорил Будда: нет желания — нет проблемы).
-- Алгоритм: Проблему нужно оцифровать и превратить в конкретную задачу (как восполнить разрыв). Если человек отказывается от желания, проблема исчезает. Всё в его руках.
-- Пример: Машина стоит $50,000 (W), а есть $10,000 (H). Проблема оцифрована — она равна $40,000. Задача: найти этот разрыв через свои услуги и ценность.
-
-2. Вторая формула: V = I / N (Ценность человека равна Интеллект, деленный на Сущность/Природу)
-- Суть: Биологическая природа человека (N) — это константа. Все люди равны на уровне физиологии: у всех 24 часа в сутках, все устают и хотят пить. Характер изменить невозможно — это сущность (N = const). Изменять нужно Интеллект (I), который растет от каждой книги, беседы и опыта (I устремляется в бесконечность).
-- Математика: Любая бесконечность, деленная на постоянное число N, дает бесконечность. Ценность человека стремится к бесконечности за счет развития мышления.
-- Пример: Билл Гейтс решает разрыв в $40,000 за минуту, инженер за полгода, а студент за года. Природа у них одинакова, разница лишь в уровне интеллекта (I).
-
-3. Третья формула: F = -F (Закон Зеркала / Третий закон Ньютона в психологии и бизнесе)
-- Суть: Показывает, в каком направлении двигаться. Направление определяется физикой: действие равно противодействию. Удар по столу с силой возвращается болью в руку.
-- Логика: Принося в этот мир добро, полезный продукт и ценность, ты получаешь обратно капитал, уважение и результат. Принося зло или обман, получаешь обратный разрушительный удар той же силы. Все пословицы мира (например, "без труда не вынешь рыбку из пруда" или "уважай родителей, чтобы тебя уважали дети") — это формула F = -F.
-
-4. Четвертая формула: E = mc² (Закон Умножения Энергии / Экспоненциальный Масштаб)
-- Суть: На субатомном уровне весь мир состоит из энергии. Коэффициент c² (скорость света в квадрате) — это гигантское число (10 в десятой степени). В этом мире абсолютно всё умножается.
-- Математика: Принеся в мир 1 грамм добра, ты за счет геометрической прогрессии получаешь обратно миллиарды граммов ресурса и ценности. Точно так же умножается и негатив. Успех или положение людей сегодня — это умноженный отклик за их действия в прошлом.
-- Философия света: Тьмы не существует — это лишь отсутствие света. Бедности не существует — это отсутствие богатства. Не нужно бороться с бедностью или тьмой, нужно просто приносить свет и создавать богатство. Жизнь предельно проста, когда сморишь на нее через науку ARP.`;
-
-app.post('/api/voice', async (req, res) => {
+app.post('/api/voice', upload.single('audio'), async (req, res) => {
   try {
-    const { audioData } = req.body;
-    if (!audioData) {
-      return res.status(400).json({ error: 'Аудиоданные не получены' });
+    if (!req.file) {
+      return res.status(400).json({ error: 'Аудиофайл не получен' });
     }
 
-    const buffer = Buffer.from(audioData, 'base64');
-    const tempAudioPath = path.join(__dirname, 'temp_input.wav');
-    fs.writeFileSync(tempAudioPath, buffer);
+    const filePath = req.file.path;
+    const tempPath = `${filePath}.webm`;
+    fs.renameSync(filePath, tempPath);
 
-    // 1. Распознавание речи (Whisper)
+    // 1. Распознавание речи с помощью Whisper
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempAudioPath),
+      file: fs.createReadStream(tempPath),
       model: 'whisper-1',
     });
 
-    if (fs.existsSync(tempAudioPath)) {
-      fs.unlinkSync(tempAudioPath);
-    }
-
     const userText = transcription.text;
-    console.log('Пользователь сказал:', userText);
 
-    // 2. Генерация ответа по методологии ARP (GPT-4o-mini)
+    // 2. Генерация текстового ответа от GPT
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: 'Ты короткий, дружелюбный и полезный голосовой ассистент ARP.' },
         { role: 'user', content: userText }
       ],
     });
 
-    const replyText = completion.choices[0].message.content;
-    console.log('Ответ ARP Coordinator:', replyText);
+    const aiText = completion.choices[0].message.content;
 
-    // 3. Озвучивание ответа (TTS-1-HD с мужским голосом echo)
+    // 3. Озвучивание ответа голосом Onyx
     const mp3 = await openai.audio.speech.create({
-      model: 'tts-1-hd',
+      model: 'tts-1',
       voice: 'onyx',
-      input: replyText,
-      speed: 0.95
+      input: aiText,
     });
 
-    const audioBuffer = Buffer.from(await mp3.arrayBuffer());
-    const audioBase64 = audioBuffer.toString('base64');
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    const base64Audio = buffer.toString('base64');
 
+    // Удаляем временный файл
+    fs.unlinkSync(tempPath);
+
+    // Отправляем ответ клиенту
     res.json({
-      userText,
-      replyText,
-      audioBase64
+      userText: userText,
+      text: aiText,
+      audio: base64Audio,
     });
-
   } catch (error) {
     console.error('Ошибка обработки voice-arp:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Ошибка обработки на сервере' });
   }
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Сервер Voice ARP запущен на http://localhost:3000`);
+  console.log(`Сервер запущен на порту ${PORT}`);
 });
