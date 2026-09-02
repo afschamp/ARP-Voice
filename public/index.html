@@ -3,111 +3,157 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice Assistant</title>
+  <title>Voice ARP AI</title>
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: #0d0f12;
-      color: #ffffff;
+      color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
     }
     .container {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 30px;
-    }
-    .orb-wrapper {
-      position: relative;
-      width: 200px;
-      height: 200px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      gap: 25px;
+      max-width: 500px;
+      text-align: center;
+      padding: 20px;
     }
     .orb {
-      width: 120px;
-      height: 120px;
+      width: 140px;
+      height: 140px;
       border-radius: 50%;
       background: radial-gradient(circle at 30% 30%, #4facfe 0%, #00f2fe 100%);
-      box-shadow: 0 0 40px rgba(0, 242, 254, 0.5), inset 0 0 20px rgba(255, 255, 255, 0.8);
-      transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
-      animation: float 4s ease-in-out infinite;
+      box-shadow: 0 0 50px rgba(0,242,254,0.6);
+      animation: float 3s ease-in-out infinite;
+      transition: all 0.3s ease;
     }
-    .orb.active {
-      animation: pulse-active 1.5s ease-in-out infinite alternate;
+    .orb.recording {
+      animation: pulse 1s ease-in-out infinite alternate;
       background: radial-gradient(circle at 30% 30%, #ff0844 0%, #ffb199 100%);
-      box-shadow: 0 0 60px rgba(255, 8, 68, 0.7), inset 0 0 25px rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0 70px rgba(255,8,68,0.8);
+    }
+    .orb.thinking {
+      animation: pulse 0.5s ease-in-out infinite alternate;
+      background: radial-gradient(circle at 30% 30%, #f6d365 0%, #fda085 100%);
+      box-shadow: 0 0 70px rgba(253,160,133,0.8);
     }
     @keyframes float {
-      0%, 100% { transform: translateY(0) scale(1); }
-      50% { transform: translateY(-10px) scale(1.03); }
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-12px); }
     }
-    @keyframes pulse-active {
+    @keyframes pulse {
       0% { transform: scale(1); }
-      100% { transform: scale(1.15); }
+      100% { transform: scale(1.18); }
     }
-    .status {
-      font-size: 1.1rem;
-      color: #8a99ad;
-      letter-spacing: 0.5px;
-    }
-    .btn-talk {
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    .status { color: #8a99ad; font-size: 1.1rem; min-height: 24px; }
+    .btn {
+      background: #2563eb;
       color: #fff;
       border: none;
       padding: 14px 28px;
       font-size: 1rem;
-      font-weight: 600;
       border-radius: 30px;
       cursor: pointer;
-      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+      font-weight: 600;
+      box-shadow: 0 4px 15px rgba(37,99,235,0.4);
       transition: all 0.2s ease;
     }
-    .btn-talk:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+    .btn:disabled { background: #475569; cursor: not-allowed; box-shadow: none; }
+    .chat-log {
+      margin-top: 10px;
+      font-size: 0.95rem;
+      color: #cbd5e1;
+      max-height: 150px;
+      overflow-y: auto;
+      text-align: left;
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      padding: 12px;
+      border-radius: 12px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="orb-wrapper">
-      <div id="orb" class="orb"></div>
-    </div>
-    <div id="status" class="status">Нажмите для начала разговора</div>
-    <button id="talkBtn" class="btn-talk">Начать разговор</button>
+    <div id="orb" class="orb"></div>
+    <div id="status" class="status">Нажмите кнопку, чтобы заговорить</div>
+    <button id="talkBtn" class="btn">Начать разговор</button>
+    <div id="log" class="chat-log" style="display:none;"></div>
   </div>
 
   <script>
-    const orb = document.getElementById('orb');
-    const status = document.getElementById('status');
-    const talkBtn = document.getElementById('talkBtn');
+    const orb = document.getElementById("orb");
+    const statusText = document.getElementById("status");
+    const btn = document.getElementById("talkBtn");
+    const log = document.getElementById("log");
+    let mediaRecorder, audioChunks = [], activeStream = null;
 
-    let isTalking = false;
-
-    talkBtn.addEventListener('click', () => {
-      isTalking = !isTalking;
-      if (isTalking) {
-        orb.classList.add('active');
-        status.innerText = "Слушаю вас...";
-        talkBtn.innerText = "Завершить";
-      } else {
-        orb.classList.remove('active');
-        status.innerText = "Нажмите для начала разговора";
-        talkBtn.innerText = "Начать разговор";
+    btn.onclick = async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        return;
       }
-    });
+
+      try {
+        activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(activeStream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+        mediaRecorder.onstart = () => {
+          orb.className = "orb recording";
+          statusText.innerText = "Слушаю вас...";
+          btn.innerText = "Завершить и отправить";
+        };
+
+        mediaRecorder.onstop = async () => {
+          orb.className = "orb thinking";
+          statusText.innerText = "Думаю и озвучиваю...";
+          btn.innerText = "Обработка...";
+          btn.disabled = true;
+
+          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "speech.webm");
+
+          try {
+            const res = await fetch("/api/voice", { method: "POST", body: formData });
+            const data = await res.json();
+            
+            if (data.text || data.userText) {
+              log.style.display = "block";
+              log.innerHTML = `<b>Вы:</b> ${data.userText || "Голосовое сообщение"}<br><br><b>ARP:</b> ${data.text || ""}`;
+            }
+            if (data.audio) {
+              const audio = new Audio("data:audio/mp3;base64," + data.audio);
+              audio.play();
+            }
+            statusText.innerText = "Нажмите кнопку, чтобы заговорить";
+          } catch (err) {
+            statusText.innerText = "Ошибка при обработке запроса";
+          } finally {
+            orb.className = "orb";
+            btn.innerText = "Начать разговор";
+            btn.disabled = false;
+            if (activeStream) {
+              activeStream.getTracks().forEach(track => track.stop());
+            }
+          }
+        };
+
+        mediaRecorder.start();
+      } catch (err) {
+        alert("Пожалуйста, разрешите доступ к микрофону в настройках браузера.");
+      }
+    };
   </script>
 </body>
 </html>
