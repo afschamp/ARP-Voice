@@ -11,6 +11,11 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Создаем папку uploads, если её нет
+if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads');
+}
+
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
@@ -31,7 +36,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const tempPath = `${filePath}.webm`;
     fs.renameSync(filePath, tempPath);
 
-    // 1. Распознавание речи с помощью Whisper
+    // 1. Распознавание речи Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempPath),
       model: 'whisper-1',
@@ -39,7 +44,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     const userText = transcription.text;
 
-    // 2. Генерация текстового ответа от GPT
+    // 2. Генерация ответа GPT-4o-mini
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -50,7 +55,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     const aiText = completion.choices[0].message.content;
 
-    // 3. Озвучивание ответа голосом Onyx
+    // 3. Озвучивание голосом Onyx
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'onyx',
@@ -63,7 +68,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     // Удаляем временный файл
     fs.unlinkSync(tempPath);
 
-    // Отправляем ответ клиенту
     res.json({
       userText: userText,
       text: aiText,
