@@ -21,7 +21,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 15px;
+      gap: 12px;
       width: 100%;
       max-width: 600px;
       margin-top: 10px;
@@ -32,13 +32,12 @@
       border-radius: 50%;
       background: radial-gradient(circle, #00d2ff 0%, #0072ff 100%);
       box-shadow: 0 0 50px rgba(0, 210, 255, 0.4);
-      transition: all 0.5s ease;
+      transition: all 0.3s ease;
       flex-shrink: 0;
     }
     .orb.recording {
       background: radial-gradient(circle, #ff416c 0%, #ff4b2b 100%);
       box-shadow: 0 0 70px rgba(255, 65, 108, 0.7);
-      transform: scale(1.08);
     }
     .orb.thinking {
       background: radial-gradient(circle, #f7b731 0%, #ffa801 100%);
@@ -57,6 +56,19 @@
     .status {
       font-size: 1rem;
       color: #a0a5b5;
+    }
+    .volume-meter {
+      width: 120px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .volume-bar {
+      height: 100%;
+      width: 0%;
+      background: #00d2ff;
+      transition: width 0.1s ease;
     }
     .chat-history {
       width: 100%;
@@ -130,15 +142,14 @@
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
     }
-    .main-btn.active {
-      background: #dc2626;
-    }
+    .main-btn.active { background: #dc2626; }
     .main-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
   <div class="main-container">
     <div id="orb" class="orb"></div>
+    <div class="volume-meter"><div id="volumeBar" class="volume-bar"></div></div>
     <div id="status" class="status">Нажмите для начала разговора</div>
   </div>
 
@@ -171,6 +182,7 @@
     const statusText = document.getElementById('status');
     const chatHistory = document.getElementById('chatHistory');
     const callBtn = document.getElementById('callBtn');
+    const volumeBar = document.getElementById('volumeBar');
 
     async function loadUserHistory() {
       try {
@@ -214,11 +226,13 @@
         currentAudio = null;
       }
       orb.className = 'orb';
+      volumeBar.style.width = '0%';
       statusText.textContent = 'Разговор завершен';
     }
 
     function stopCurrentRecording() {
       clearTimeout(silenceTimer);
+      silenceTimer = null;
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.onstop = null;
         mediaRecorder.stop();
@@ -279,7 +293,12 @@
         }
         let average = sum / dataArray.length;
 
-        if (average > 12) {
+        // Показываем уровень громкости визуально
+        let volumePercent = Math.min(100, Math.max(0, (average / 30) * 100));
+        volumeBar.style.width = volumePercent + '%';
+
+        // Снижен порог детекции голоса до 4
+        if (average > 4) {
           speechDetected = true;
           clearTimeout(silenceTimer);
           silenceTimer = null;
@@ -288,7 +307,7 @@
             if (mediaRecorder && mediaRecorder.state === 'recording') {
               mediaRecorder.stop();
             }
-          }, 1500);
+          }, 1400);
         }
 
         requestAnimationFrame(checkAudio);
@@ -298,6 +317,8 @@
     }
 
     async function sendAudio() {
+      volumeBar.style.width = '0%';
+
       if (!speechDetected || audioChunks.length === 0) {
         if (isCallActive && !isProcessing) startRecording();
         return;
@@ -305,7 +326,7 @@
 
       isProcessing = true;
       orb.className = 'orb thinking';
-      statusText.textContent = 'Думаю и озвучиваю...';
+      statusText.textContent = 'Думаю и анализирую...';
 
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
       const formData = new FormData();
@@ -316,13 +337,20 @@
         const response = await fetch('/api/voice', { method: 'POST', body: formData });
         const data = await response.json();
 
-        if (data.audio) {
+        if (data.userText && data.userText.trim() !== '') {
           addMessageToUI('user', data.userText);
           addMessageToUI('assistant', data.text);
 
-          playAssistantAudio(data.audio);
+          if (data.audio) {
+            playAssistantAudio(data.audio);
+          } else {
+            isProcessing = false;
+            if (isCallActive) startRecording();
+          }
         } else {
-          throw new Error('Ошибка сервера');
+          // Если Whisper ничего не расслышал, возвращаемся в режим слушания
+          isProcessing = false;
+          if (isCallActive) startRecording();
         }
       } catch (err) {
         isProcessing = false;
