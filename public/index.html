@@ -153,6 +153,7 @@
     }
 
     let mediaRecorder = null;
+    let currentStream = null;
     let audioChunks = [];
     let isCallActive = false;
     let currentAudio = null;
@@ -227,12 +228,14 @@
       if (mediaRecorder) {
         mediaRecorder.onstop = null;
         if (mediaRecorder.state !== 'inactive') {
-          mediaRecorder.stop();
-        }
-        if (mediaRecorder.stream) {
-          mediaRecorder.stream.getTracks().forEach(t => t.stop());
+          try { mediaRecorder.stop(); } catch(e){}
         }
         mediaRecorder = null;
+      }
+
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
       }
 
       if (audioContext) {
@@ -252,12 +255,12 @@
       audioChunks = [];
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(currentStream);
 
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
-        microphone = audioContext.createMediaStreamSource(stream);
+        microphone = audioContext.createMediaStreamSource(currentStream);
         microphone.connect(analyser);
         analyser.fftSize = 512;
 
@@ -331,9 +334,8 @@
       formData.append('audio', audioBlob, 'recording.webm');
       formData.append('userId', userId);
 
-      // Тайм-аут 12 секунд для предотвращения вечного зависания
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       try {
         const response = await fetch('/api/voice', { 
@@ -343,6 +345,8 @@
         });
         clearTimeout(timeoutId);
 
+        if (!response.ok) throw new Error('Ошибка сервера');
+
         const data = await response.json();
 
         if (data.userText && data.userText.trim() !== '') {
@@ -350,16 +354,15 @@
           addMessageToUI('assistant', data.text);
 
           if (data.audio) {
-            playAssistantAudio(data.audio);
-          } else {
-            resumeListening();
+            await playAssistantAudio(data.audio);
+            return;
           }
-        } else {
-          resumeListening();
         }
       } catch (err) {
         clearTimeout(timeoutId);
-        console.error('Ошибка запроса:', err);
+        console.error('Ошибка обработки запроса:', err);
+      } finally {
+        // Гарантированный выход из состояния обработки при любых исходах
         resumeListening();
       }
     }
@@ -375,24 +378,31 @@
     }
 
     function playAssistantAudio(base64Audio) {
-      isProcessing = true;
-      cleanupAudio();
+      return new Promise((resolve) => {
+        isProcessing = true;
+        cleanupAudio();
 
-      orb.className = 'orb speaking';
-      statusText.textContent = 'Ассистент говорит...';
+        orb.className = 'orb speaking';
+        statusText.textContent = 'Ассистент говорит...';
 
-      if (currentAudio) {
-        currentAudio.pause();
-      }
+        if (currentAudio) {
+          currentAudio.pause();
+        }
 
-      currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
-      
-      currentAudio.onended = () => resumeListening();
-      currentAudio.onerror = () => resumeListening();
+        currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
+        
+        const finishPlay = () => {
+          currentAudio = null;
+          resolve();
+        };
 
-      currentAudio.play().catch(e => {
-        console.error('Ошибка воспроизведения:', e);
-        resumeListening();
+        currentAudio.onended = finishPlay;
+        currentAudio.onerror = finishPlay;
+
+        currentAudio.play().catch(e => {
+          console.error('Ошибка воспроизведения:', e);
+          finishPlay();
+        });
       });
     }
 
@@ -438,12 +448,11 @@
         });
         const data = await res.json();
         if (data.audio) {
-          playAssistantAudio(data.audio);
-        } else {
-          resumeListening();
+          await playAssistantAudio(data.audio);
         }
       } catch (e) {
         console.error('Ошибка TTS:', e);
+      } finally {
         resumeListening();
       }
     }
