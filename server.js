@@ -1,12 +1,10 @@
 import express from 'express';
+import cors from 'cors';
 import multer from 'multer';
-import dotenv from 'dotenv';
-import { OpenAI } from 'openai';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-dotenv.config();
+import OpenAI, { toFile } from 'openai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,92 +12,93 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
+app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
+// Хранилище истории диалогов в памяти
 const userHistories = new Map();
 
-function getHistory(userId) {
-  if (!userHistories.has(userId)) {
-    userHistories.set(userId, [
-      {
-        role: "system",
-        content: `Ты — голосовой ассистент методологии ARP (Algorithm for Resolution of the Problem). 
-Твоя цель — помогать пользователю анализировать его задачи, желания (Desire) и возможности (Ability).
-Будь дружелюбным, естественным и гибким собеседником. 
-Если пользователь задает простой или отвлеченный вопрос (например, сколько будет 1+1, приветствие или бытовые вопросы), кратко и понятливо ответь на него, а затем мягко переведи беседу к его текущим целям или задачам.
-Отвечай кратко, емко и естественно (1-3 предложения), так как твои ответы озвучиваются вслух.`
-      }
-    ]);
-  }
-  return userHistories.get(userId);
-}
-
 app.get('/api/history/:userId', (req, res) => {
-  const history = getHistory(req.params.userId);
-  const cleanHistory = history.filter(msg => msg.role !== 'system');
-  res.json({ history: cleanHistory });
+  const { userId } = req.params;
+  const history = userHistories.get(userId) || [];
+  res.json({ history });
 });
 
 app.post('/api/voice', upload.single('audio'), async (req, res) => {
-  const userId = req.body.userId || 'default_user';
-  const history = getHistory(userId);
-  const filePath = req.file ? req.file.path : null;
-
-  if (!filePath) {
+  if (!req.file) {
     return res.status(400).json({ error: 'Аудиофайл не передан' });
   }
 
+  const filePath = req.file.path;
+  const userId = req.body.userId || 'default_user';
+
   try {
-    // 1. Распознавание речи (STT)
+    // 1. Преобразуем загруженный multer файл в правильный формат для OpenAI с явным расширением .webm
+    const fileBuffer = fs.readFileSync(filePath);
+    const audioFile = await toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
+
+    // 2. Распознавание речи через Whisper
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
+      file: audioFile,
       model: 'whisper-1',
-      language: 'ru',
     });
 
     const userText = transcription.text;
-    if (!userText || userText.trim() === '') {
-      fs.unlinkSync(filePath);
-      return res.json({ userText: '', text: 'Я вас не услышал. Повторите, пожалуйста.', audio: '' });
+
+    if (!userText || !userText.trim()) {
+      return res.json({ userText: '', text: '', audio: null });
     }
+
+    // 3. Получаем или инициализируем историю
+    if (!userHistories.has(userId)) {
+      userHistories.set(userId, []);
+    }
+    const history = userHistories.get(userId);
 
     history.push({ role: 'user', content: userText });
 
-    // 2. Генерация ответа (LLM)
+    // Ограничиваем историю последними 10 сообщениями
+    if (history.length > 10) history.shift();
+
+    // 4. Генерация ответа от ChatGPT
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: history,
+      messages: [
+        { role: 'system', content: 'Ты — голосовой ассистент ARP. Отвечай кратко, емко и естественно, без лишней форматированной разметки и без списков, так как твой ответ будет озвучен.' },
+        ...history
+      ]
     });
 
     const assistantText = completion.choices[0].message.content;
     history.push({ role: 'assistant', content: assistantText });
 
-    // 3. Озвучка ответа (TTS)
-    const mp3Response = await openai.audio.speech.create({
+    // 5. Озвучка ответа через OpenAI TTS
+    const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
-      voice: 'onyx',
+      voice: 'alloy',
       input: assistantText,
     });
 
-    const buffer = Buffer.from(await mp3Response.arrayBuffer());
+    const buffer = Buffer.from(await mp3.arrayBuffer());
     const base64Audio = buffer.toString('base64');
-
-    fs.unlinkSync(filePath);
 
     res.json({
       userText,
       text: assistantText,
-      audio: base64Audio,
+      audio: base64Audio
     });
+
   } catch (error) {
-    console.error('Ошибка обработки голоса:', error);
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    res.status(500).json({ error: 'Ошибка сервера при обработке аудио' });
+    console.error('Ошибка бэкенда:', error);
+    res.status(500).json({ error: error.message || 'Ошибка обработки голосового запроса' });
+  } finally {
+    // Удаляем временный файл из папки uploads
+    fs.unlink(filePath, () => {});
   }
 });
 
@@ -108,19 +107,19 @@ app.post('/api/tts', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'Текст не передан' });
 
   try {
-    const mp3Response = await openai.audio.speech.create({
+    const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
-      voice: 'onyx',
+      voice: 'alloy',
       input: text,
     });
 
-    const buffer = Buffer.from(await mp3Response.arrayBuffer());
+    const buffer = Buffer.from(await mp3.arrayBuffer());
     const base64Audio = buffer.toString('base64');
 
     res.json({ audio: base64Audio });
   } catch (error) {
     console.error('Ошибка TTS:', error);
-    res.status(500).json({ error: 'Ошибка генерации речи' });
+    res.status(500).json({ error: 'Ошибка генерации озвучки' });
   }
 });
 
