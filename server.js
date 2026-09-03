@@ -1,10 +1,13 @@
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
-const OpenAI = require('openai');
-const { toFile } = require('openai');
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import OpenAI from 'openai';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -35,11 +38,11 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
   const userId = req.body.userId || 'default_user';
 
   try {
-    // Преобразуем файл с явно указанным расширением webm
+    // Используем OpenAI.toFile() для явного указания формата WebM
     const fileBuffer = fs.readFileSync(filePath);
-    const audioFile = await toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
+    const audioFile = await OpenAI.toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
 
-    // Распознавание через Whisper
+    // Распознавание речи через Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
@@ -51,7 +54,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
       return res.json({ userText: '', text: '', audio: null });
     }
 
-    // Обработка истории
+    // История сообщений
     if (!userHistories.has(userId)) {
       userHistories.set(userId, []);
     }
@@ -60,7 +63,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     history.push({ role: 'user', content: userText });
     if (history.length > 10) history.shift();
 
-    // Генерация ответа от ChatGPT
+    // Ответ от GPT
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -72,7 +75,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const assistantText = completion.choices[0].message.content;
     history.push({ role: 'assistant', content: assistantText });
 
-    // Озвучка через TTS
+    // Озвучка ответа через TTS
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'alloy',
