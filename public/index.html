@@ -165,6 +165,7 @@
     let microphone;
     let silenceTimer = null;
     let speechDetected = false;
+    let isProcessing = false;
 
     const orb = document.getElementById('orb');
     const statusText = document.getElementById('status');
@@ -203,30 +204,39 @@
 
     function stopCall() {
       isCallActive = false;
+      isProcessing = false;
       callBtn.textContent = 'Начать разговор';
       callBtn.classList.remove('active');
-      clearTimeout(silenceTimer);
+      stopCurrentRecording();
 
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        if (mediaRecorder.stream) {
-          mediaRecorder.stream.getTracks().forEach(t => t.stop());
-        }
-      }
       if (currentAudio) {
         currentAudio.pause();
-      }
-      if (audioContext) {
-        audioContext.close();
+        currentAudio = null;
       }
       orb.className = 'orb';
       statusText.textContent = 'Разговор завершен';
     }
 
+    function stopCurrentRecording() {
+      clearTimeout(silenceTimer);
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.onstop = null;
+        mediaRecorder.stop();
+        if (mediaRecorder.stream) {
+          mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+      }
+    }
+
     async function startRecording() {
-      if (!isCallActive) return;
+      if (!isCallActive || isProcessing) return;
 
       try {
+        stopCurrentRecording();
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
@@ -260,7 +270,7 @@
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
       function checkAudio() {
-        if (!isCallActive || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+        if (!isCallActive || isProcessing || !mediaRecorder || mediaRecorder.state !== 'recording') return;
 
         analyser.getByteFrequencyData(dataArray);
         let sum = 0;
@@ -289,10 +299,11 @@
 
     async function sendAudio() {
       if (!speechDetected || audioChunks.length === 0) {
-        if (isCallActive) startRecording();
+        if (isCallActive && !isProcessing) startRecording();
         return;
       }
 
+      isProcessing = true;
       orb.className = 'orb thinking';
       statusText.textContent = 'Думаю и озвучиваю...';
 
@@ -314,21 +325,28 @@
           throw new Error('Ошибка сервера');
         }
       } catch (err) {
+        isProcessing = false;
         orb.className = 'orb';
         statusText.textContent = 'Ошибка обработки';
-        if (isCallActive) setTimeout(startRecording, 2000);
+        if (isCallActive) setTimeout(startRecording, 1000);
       }
     }
 
     function playAssistantAudio(base64Audio) {
+      isProcessing = true;
+      stopCurrentRecording();
+
       orb.className = 'orb speaking';
       statusText.textContent = 'Ассистент говорит...';
 
-      if (currentAudio) currentAudio.pause();
-      currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
-      currentAudio.play();
+      if (currentAudio) {
+        currentAudio.pause();
+      }
 
+      currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
+      
       currentAudio.onended = () => {
+        isProcessing = false;
         if (isCallActive) {
           startRecording();
         } else {
@@ -336,6 +354,17 @@
           statusText.textContent = 'Нажмите для начала разговора';
         }
       };
+
+      currentAudio.onerror = () => {
+        isProcessing = false;
+        if (isCallActive) startRecording();
+      };
+
+      currentAudio.play().catch(e => {
+        console.error('Ошибка воспроизведения:', e);
+        isProcessing = false;
+        if (isCallActive) startRecording();
+      });
     }
 
     function addMessageToUI(role, text) {
@@ -353,8 +382,6 @@
 
         actionsDiv.innerHTML = `
           <button class="action-icon" onclick="playText(this, \`${text.replace(/`/g, '\\`')}\`)" title="Прослушать">🔊</button>
-          <button class="action-icon" onclick="toggleLike(this)" title="Нравится">👍</button>
-          <button class="action-icon" onclick="toggleLike(this)" title="Не нравится">👎</button>
         `;
         wrapper.appendChild(actionsDiv);
       }
@@ -364,7 +391,16 @@
     }
 
     async function playText(btn, text) {
+      isProcessing = true;
+      stopCurrentRecording();
+
+      if (currentAudio) {
+        currentAudio.pause();
+      }
+
+      orb.className = 'orb thinking';
       statusText.textContent = 'Озвучиваю заново...';
+
       try {
         const res = await fetch('/api/tts', {
           method: 'POST',
@@ -374,14 +410,15 @@
         const data = await res.json();
         if (data.audio) {
           playAssistantAudio(data.audio);
+        } else {
+          isProcessing = false;
+          if (isCallActive) startRecording();
         }
       } catch (e) {
         console.error('Ошибка TTS:', e);
+        isProcessing = false;
+        if (isCallActive) startRecording();
       }
-    }
-
-    function toggleLike(btn) {
-      btn.style.color = btn.style.color === 'rgb(0, 210, 255)' ? '#9ca3af' : '#00d2ff';
     }
   </script>
 </body>
