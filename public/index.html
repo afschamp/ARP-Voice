@@ -27,8 +27,8 @@
       margin-top: 10px;
     }
     .orb {
-      width: 140px;
-      height: 140px;
+      width: 130px;
+      height: 130px;
       border-radius: 50%;
       background: radial-gradient(circle, #00d2ff 0%, #0072ff 100%);
       box-shadow: 0 0 50px rgba(0, 210, 255, 0.4);
@@ -66,31 +66,60 @@
       margin: 15px 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       padding-right: 5px;
     }
+    .msg-wrapper {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+    }
+    .msg-wrapper.user { align-self: flex-end; }
+    .msg-wrapper.assistant { align-self: flex-start; }
+    
     .msg {
       padding: 12px 16px;
       border-radius: 14px;
       font-size: 0.95rem;
       line-height: 1.4;
-      max-width: 85%;
       word-wrap: break-word;
     }
     .msg.user {
       background: #2563eb;
       color: #fff;
-      align-self: flex-end;
       border-bottom-right-radius: 4px;
     }
     .msg.assistant {
       background: rgba(255, 255, 255, 0.08);
       color: #e5e7eb;
-      align-self: flex-start;
       border-bottom-left-radius: 4px;
       border: 1px solid rgba(255, 255, 255, 0.1);
     }
-    button {
+
+    .msg-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+      padding: 0 4px;
+    }
+    .action-icon {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 4px;
+      border-radius: 4px;
+      transition: color 0.2s;
+    }
+    .action-icon:hover { color: #ffffff; }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .main-btn {
       background: #2563eb;
       color: white;
       border: none;
@@ -100,10 +129,11 @@
       border-radius: 30px;
       cursor: pointer;
       transition: background 0.2s, transform 0.1s;
-      margin-bottom: 10px;
     }
-    button:hover { background: #1d4ed8; }
-    button:disabled { background: #4b5563; cursor: not-allowed; transform: none; }
+    .main-btn.active {
+      background: #dc2626;
+    }
+    .main-btn:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
@@ -114,100 +144,186 @@
 
   <div id="chatHistory" class="chat-history"></div>
 
-  <button id="actionBtn">Начать разговор</button>
+  <div class="controls">
+    <button id="callBtn" class="main-btn">Начать разговор</button>
+  </div>
 
   <script>
+    // Получение или создание уникального ID пользователя
+    let userId = localStorage.getItem('arp_user_id');
+    if (!userId) {
+      userId = 'user_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('arp_user_id', userId);
+    }
+
     let mediaRecorder;
     let audioChunks = [];
-    let isRecording = false;
-    let conversationHistory = []; // Сохраняем историю переписки
+    let isCallActive = false;
+    let currentAudio = null;
 
     const orb = document.getElementById('orb');
     const statusText = document.getElementById('status');
     const chatHistory = document.getElementById('chatHistory');
-    const actionBtn = document.getElementById('actionBtn');
+    const callBtn = document.getElementById('callBtn');
 
-    actionBtn.addEventListener('click', async () => {
-      if (!isRecording) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(stream);
-          audioChunks = [];
-
-          mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
-          mediaRecorder.onstop = sendAudio;
-
-          mediaRecorder.start();
-          isRecording = true;
-          
-          orb.className = 'orb recording';
-          statusText.textContent = 'Идет запись... Говорите';
-          actionBtn.textContent = 'Завершить и отправить';
-        } catch (err) {
-          statusText.textContent = 'Ошибка доступа к микрофону';
-          console.error(err);
+    // Загрузка сохраненной истории с сервера
+    async function loadUserHistory() {
+      try {
+        const res = await fetch(`/api/history/${userId}`);
+        const data = await res.json();
+        if (data.history) {
+          data.history.forEach(msg => {
+            addMessageToUI(msg.role, msg.content);
+          });
         }
-      } else {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        isRecording = false;
+      } catch (e) {
+        console.error('Ошибка загрузки истории:', e);
+      }
+    }
+    loadUserHistory();
 
-        orb.className = 'orb thinking';
-        statusText.textContent = 'Думаю и озвучиваю...';
-        actionBtn.disabled = true;
-        actionBtn.textContent = 'Обработка...';
+    callBtn.addEventListener('click', () => {
+      if (!isCallActive) {
+        startCall();
+      } else {
+        stopCall();
       }
     });
 
-    function addMessageToUI(role, text) {
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `msg ${role}`;
-      msgDiv.textContent = text;
-      chatHistory.appendChild(msgDiv);
-      chatHistory.scrollTop = chatHistory.scrollHeight;
+    function startCall() {
+      isCallActive = true;
+      callBtn.textContent = 'Завершить разговор';
+      callBtn.classList.add('active');
+      startRecording();
+    }
+
+    function stopCall() {
+      isCallActive = false;
+      callBtn.textContent = 'Начать разговор';
+      callBtn.classList.remove('active');
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      }
+      if (currentAudio) {
+        currentAudio.pause();
+      }
+      orb.className = 'orb';
+      statusText.textContent = 'Разговор завершен';
+    }
+
+    async function startRecording() {
+      if (!isCallActive) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = sendAudio;
+
+        mediaRecorder.start();
+        orb.className = 'orb recording';
+        statusText.textContent = 'Слушаю вас... Говорите';
+      } catch (err) {
+        statusText.textContent = 'Ошибка микрофона';
+        stopCall();
+      }
     }
 
     async function sendAudio() {
+      if (audioChunks.length === 0) return;
+
+      orb.className = 'orb thinking';
+      statusText.textContent = 'Думаю и озвучиваю...';
+
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('history', JSON.stringify(conversationHistory));
+      formData.append('userId', userId);
 
       try {
         const response = await fetch('/api/voice', { method: 'POST', body: formData });
         const data = await response.json();
 
         if (data.audio) {
-          // Выводим в интерфейс сообщения
-          addMessageToUI('user', `Вы: ${data.userText}`);
-          addMessageToUI('assistant', `ARP: ${data.text}`);
+          addMessageToUI('user', data.userText);
+          addMessageToUI('assistant', data.text);
 
-          // Обновляем массив истории
-          conversationHistory.push({ role: 'user', content: data.userText });
-          conversationHistory.push({ role: 'assistant', content: data.text });
-
-          orb.className = 'orb speaking';
-          statusText.textContent = 'Ассистент говорит...';
-
-          const audio = new Audio("data:audio/mp3;base64," + data.audio);
-          audio.play();
-
-          audio.onended = () => {
-            orb.className = 'orb';
-            statusText.textContent = 'Нажмите для ответа';
-            actionBtn.disabled = false;
-            actionBtn.textContent = 'Ответить';
-          };
+          playAssistantAudio(data.audio);
         } else {
-          throw new Error('Ошибка сервера');
+          throw new Error(' Ошибка сервера');
         }
       } catch (err) {
         orb.className = 'orb';
-        statusText.textContent = 'Ошибка обработки ответа';
-        actionBtn.disabled = false;
-        actionBtn.textContent = 'Попробовать снова';
-        console.error(err);
+        statusText.textContent = 'Ошибка обработки';
+        if (isCallActive) setTimeout(startRecording, 2000);
       }
+    }
+
+    function playAssistantAudio(base64Audio) {
+      orb.className = 'orb speaking';
+      statusText.textContent = 'Ассистент говорит...';
+
+      if (currentAudio) currentAudio.pause();
+      currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
+      currentAudio.play();
+
+      currentAudio.onended = () => {
+        if (isCallActive) {
+          // Автоматически слушаем ответ пользователя дальше
+          startRecording();
+        } else {
+          orb.className = 'orb';
+          statusText.textContent = 'Нажмите для начала разговора';
+        }
+      };
+    }
+
+    function addMessageToUI(role, text) {
+      const wrapper = document.createElement('div');
+      wrapper.className = `msg-wrapper ${role}`;
+
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `msg ${role}`;
+      msgDiv.textContent = role === 'user' ? `Вы: ${text}` : `ARP: ${text}`;
+      wrapper.appendChild(msgDiv);
+
+      if (role === 'assistant') {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'msg-actions';
+
+        actionsDiv.innerHTML = `
+          <button class="action-icon" onclick="playText('${text.replace(/'/g, "\\'")}')" title="Прослушать">🔊</button>
+          <button class="action-icon" onclick="toggleLike(this)" title="Нравится">👍</button>
+          <button class="action-icon" onclick="toggleLike(this)" title="Не нравится">👎</button>
+        `;
+        wrapper.appendChild(actionsDiv);
+      }
+
+      chatHistory.appendChild(wrapper);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    async function playText(text) {
+      statusText.textContent = 'Озвучиваю заново...';
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.audio) {
+          playAssistantAudio(data.audio);
+        }
+      } catch (e) {
+        console.error('Ошибка TTS:', e);
+      }
+    }
+
+    function toggleLike(btn) {
+      btn.style.color = btn.style.color === 'rgb(0, 210, 255)' ? '#9ca3af' : '#00d2ff';
     }
   </script>
 </body>

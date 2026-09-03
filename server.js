@@ -15,6 +15,25 @@ if (!fs.existsSync('uploads')) {
   fs.mkdirSync('uploads');
 }
 
+const MEMORY_FILE = 'memory.json';
+
+// Загрузка памяти пользователей из файла
+function loadMemory() {
+  if (fs.existsSync(MEMORY_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
+    } catch (e) {
+      return {};
+    }
+  }
+  return {};
+}
+
+// Сохранение памяти пользователей в файл
+function saveMemory(memory) {
+  fs.writeFileSync(MEMORY_FILE, JSON.stringify(memory, null, 2), 'utf8');
+}
+
 const app = express();
 const upload = multer({ dest: 'uploads/' });
 
@@ -25,8 +44,17 @@ const openai = new OpenAI({
 app.use(express.static('public'));
 app.use(express.json());
 
+// Получение истории конкретного пользователя при загрузке страницы
+app.get('/api/history/:userId', (req, res) => {
+  const memory = loadMemory();
+  const userHistory = memory[req.params.userId] || [];
+  res.json({ history: userHistory });
+});
+
 app.post('/api/voice', upload.single('audio'), async (req, res) => {
   try {
+    const userId = req.body.userId || 'default_user';
+
     if (!req.file) {
       return res.status(400).json({ error: 'Аудиофайл не получен' });
     }
@@ -34,16 +62,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const filePath = req.file.path;
     const tempPath = `${filePath}.webm`;
     fs.renameSync(filePath, tempPath);
-
-    // Получаем накопленную историю из тела запроса
-    let history = [];
-    if (req.body.history) {
-      try {
-        history = JSON.parse(req.body.history);
-      } catch (e) {
-        history = [];
-      }
-    }
 
     // 1. Распознавание речи Whisper
     const transcription = await openai.audio.transcriptions.create({
@@ -53,12 +71,15 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     const userText = transcription.text;
 
-    // Системная инструкция
+    // Загружаем память пользователей
+    const memory = loadMemory();
+    const userHistory = memory[userId] || [];
+
     const systemPrompt = { 
       role: 'system', 
       content: `Ты — ARP Coordinator, интеллектуальный ИИ-ассистент и ментор, работающий строго по канонической методологии ARP (Algorithm for Resolution of the Problem).
 
-Твоя цель — вести АКТИВНЫЙ ДИАЛОГ с пользователем, помогать разбираться в ситуациях, пропускать их мысли через «фильтр ARP» и выводить на уровень авторства.
+Твоя цель — вести АКТИВНЫЙ ДИАЛОГ с пользователем, помогать разбираться в ситуациях, пропускать их мысли через «фильтр ARP» и выводить на уровень авторства. Ты помнишь всю прошлую информацию о собеседнике.
 
 ОБЯЗАТЕЛЬНОЕ ПРАВИЛО ДИАЛОГА:
 В конце КАЖДОГО своего ответа задавай СТРОГО ОДИН открытый, вовлекающий follow-up вопрос, чтобы продолжить беседу и углубиться в разбор ситуации через ARP!
@@ -78,10 +99,9 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 - Пиши полностью чистым текстом, емко, до 2000 символов.`
     };
 
-    // Формируем диалог для OpenAI: System + History + New User Text
     const messages = [
       systemPrompt,
-      ...history,
+      ...userHistory,
       { role: 'user', content: userText }
     ];
 
@@ -105,6 +125,12 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     fs.unlinkSync(tempPath);
 
+    // Сохраняем диалог в долгосрочную память
+    userHistory.push({ role: 'user', content: userText });
+    userHistory.push({ role: 'assistant', content: aiText });
+    memory[userId] = userHistory;
+    saveMemory(memory);
+
     res.json({
       userText: userText,
       text: aiText,
@@ -113,6 +139,22 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
   } catch (error) {
     console.error('Ошибка обработки voice-arp:', error);
     res.status(500).json({ error: 'Ошибка обработки на сервере' });
+  }
+});
+
+// Отдельный эндпоинт для переозвучивания существующего текста
+app.post('/api/tts', async (req, res) => {
+  try {
+    const { text } = req.body;
+    const mp3 = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: 'onyx',
+      input: text,
+    });
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    res.json({ audio: buffer.toString('base64') });
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка генерации речи' });
   }
 });
 
