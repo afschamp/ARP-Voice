@@ -160,6 +160,12 @@
     let isCallActive = false;
     let currentAudio = null;
 
+    let audioContext;
+    let analyser;
+    let microphone;
+    let silenceTimer = null;
+    let speechDetected = false;
+
     const orb = document.getElementById('orb');
     const statusText = document.getElementById('status');
     const chatHistory = document.getElementById('chatHistory');
@@ -199,12 +205,19 @@
       isCallActive = false;
       callBtn.textContent = 'Начать разговор';
       callBtn.classList.remove('active');
+      clearTimeout(silenceTimer);
+
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        if (mediaRecorder.stream) {
+          mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        }
       }
       if (currentAudio) {
         currentAudio.pause();
+      }
+      if (audioContext) {
+        audioContext.close();
       }
       orb.className = 'orb';
       statusText.textContent = 'Разговор завершен';
@@ -212,25 +225,73 @@
 
     async function startRecording() {
       if (!isCallActive) return;
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
+        speechDetected = false;
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        analyser.fftSize = 512;
 
         mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-        mediaRecorder.onstop = sendAudio;
+        mediaRecorder.onstop = () => {
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          if (audioContext && audioContext.state !== 'closed') audioContext.close();
+          sendAudio();
+        };
 
         mediaRecorder.start();
         orb.className = 'orb recording';
         statusText.textContent = 'Слушаю вас... Говорите';
+
+        monitorSilence();
       } catch (err) {
         statusText.textContent = 'Ошибка микрофона';
         stopCall();
       }
     }
 
+    function monitorSilence() {
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function checkAudio() {
+        if (!isCallActive || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        let average = sum / dataArray.length;
+
+        if (average > 12) {
+          speechDetected = true;
+          clearTimeout(silenceTimer);
+          silenceTimer = null;
+        } else if (speechDetected && !silenceTimer) {
+          silenceTimer = setTimeout(() => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+              mediaRecorder.stop();
+            }
+          }, 1500);
+        }
+
+        requestAnimationFrame(checkAudio);
+      }
+
+      checkAudio();
+    }
+
     async function sendAudio() {
-      if (audioChunks.length === 0) return;
+      if (!speechDetected || audioChunks.length === 0) {
+        if (isCallActive) startRecording();
+        return;
+      }
 
       orb.className = 'orb thinking';
       statusText.textContent = 'Думаю и озвучиваю...';
