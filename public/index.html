@@ -152,28 +152,27 @@
       localStorage.setItem('arp_user_id', userId);
     }
 
-    let mediaRecorder;
+    let mediaRecorder = null;
     let audioChunks = [];
     let isCallActive = false;
     let currentAudio = null;
 
-    let audioContext;
-    let analyser;
-    let microphone;
+    let audioContext = null;
+    let analyser = null;
+    let microphone = null;
     let silenceTimer = null;
     let speechDetected = false;
     let speechStartTime = 0;
-    let state = 'IDLE'; // IDLE, LISTENING, THINKING, SPEAKING
+    let isProcessing = false;
 
     const orb = document.getElementById('orb');
     const statusText = document.getElementById('status');
     const chatHistory = document.getElementById('chatHistory');
     const callBtn = document.getElementById('callBtn');
 
-    // Параметры голосового детектора
-    const NOISE_THRESHOLD = 15; // Порог громкости для голоса
-    const SILENCE_DELAY = 1200;  // Задержка паузы в мс (1.2 сек)
-    const MIN_SPEECH_TIME = 600; // Минимальная длительность фразы (0.6 сек)
+    const NOISE_THRESHOLD = 12;
+    const SILENCE_DELAY = 1000;
+    const MIN_SPEECH_TIME = 500;
 
     async function loadUserHistory() {
       try {
@@ -185,7 +184,7 @@
           });
         }
       } catch (e) {
-        console.error('Ошибка загрузки истории:', e);
+        console.error('Ошибка истории:', e);
       }
     }
     loadUserHistory();
@@ -200,6 +199,7 @@
 
     function startCall() {
       isCallActive = true;
+      isProcessing = false;
       callBtn.textContent = 'Завершить разговор';
       callBtn.classList.add('active');
       startListening();
@@ -207,10 +207,10 @@
 
     function stopCall() {
       isCallActive = false;
-      state = 'IDLE';
+      isProcessing = false;
       callBtn.textContent = 'Начать разговор';
       callBtn.classList.remove('active');
-      stopAudioContext();
+      cleanupAudio();
 
       if (currentAudio) {
         currentAudio.pause();
@@ -220,33 +220,40 @@
       statusText.textContent = 'Разговор завершен';
     }
 
-    function stopAudioContext() {
+    function cleanupAudio() {
       clearTimeout(silenceTimer);
       silenceTimer = null;
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+
+      if (mediaRecorder) {
         mediaRecorder.onstop = null;
-        mediaRecorder.stop();
+        if (mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
         if (mediaRecorder.stream) {
           mediaRecorder.stream.getTracks().forEach(t => t.stop());
         }
+        mediaRecorder = null;
       }
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
+
+      if (audioContext) {
+        if (audioContext.state !== 'closed') {
+          audioContext.close().catch(() => {});
+        }
+        audioContext = null;
       }
     }
 
     async function startListening() {
-      if (!isCallActive || state === 'THINKING' || state === 'SPEAKING') return;
+      if (!isCallActive || isProcessing) return;
+
+      cleanupAudio();
+      speechDetected = false;
+      speechStartTime = 0;
+      audioChunks = [];
 
       try {
-        stopAudioContext();
-        state = 'LISTENING';
-
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        speechDetected = false;
-        speechStartTime = 0;
 
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
@@ -254,10 +261,11 @@
         microphone.connect(analyser);
         analyser.fftSize = 512;
 
-        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
         mediaRecorder.onstop = () => {
-          if (stream) stream.getTracks().forEach(t => t.stop());
-          if (audioContext && audioContext.state !== 'closed') audioContext.close();
           handleSpeechEnd();
         };
 
@@ -267,22 +275,22 @@
 
         monitorSilence();
       } catch (err) {
-        statusText.textContent = 'Ошибка доступа к микрофону';
+        statusText.textContent = 'Ошибка микрофона';
+        console.error(err);
         stopCall();
       }
     }
 
     function monitorSilence() {
+      if (!analyser) return;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
       function checkAudio() {
-        if (!isCallActive || state !== 'LISTENING' || !mediaRecorder || mediaRecorder.state !== 'recording') return;
+        if (!isCallActive || isProcessing || !mediaRecorder || mediaRecorder.state !== 'recording') return;
 
         analyser.getByteFrequencyData(dataArray);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
         let average = sum / dataArray.length;
 
         if (average > NOISE_THRESHOLD) {
@@ -309,13 +317,12 @@
     async function handleSpeechEnd() {
       const speechDuration = Date.now() - speechStartTime;
 
-      // Если произнесен слишком короткий звук или шум — игнорируем и снова слушаем
       if (!speechDetected || speechDuration < MIN_SPEECH_TIME || audioChunks.length === 0) {
-        if (isCallActive) startListening();
+        if (isCallActive && !isProcessing) startListening();
         return;
       }
 
-      state = 'THINKING';
+      isProcessing = true;
       orb.className = 'orb thinking';
       statusText.textContent = 'Думаю и обрабатываю...';
 
@@ -324,8 +331,18 @@
       formData.append('audio', audioBlob, 'recording.webm');
       formData.append('userId', userId);
 
+      // Тайм-аут 12 секунд для предотвращения вечного зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       try {
-        const response = await fetch('/api/voice', { method: 'POST', body: formData });
+        const response = await fetch('/api/voice', { 
+          method: 'POST', 
+          body: formData,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
         const data = await response.json();
 
         if (data.userText && data.userText.trim() !== '') {
@@ -335,20 +352,31 @@
           if (data.audio) {
             playAssistantAudio(data.audio);
           } else {
-            if (isCallActive) startListening();
+            resumeListening();
           }
         } else {
-          if (isCallActive) startListening();
+          resumeListening();
         }
       } catch (err) {
-        console.error('Ошибка отправки:', err);
-        if (isCallActive) setTimeout(startListening, 1000);
+        clearTimeout(timeoutId);
+        console.error('Ошибка запроса:', err);
+        resumeListening();
+      }
+    }
+
+    function resumeListening() {
+      isProcessing = false;
+      if (isCallActive) {
+        setTimeout(startListening, 300);
+      } else {
+        orb.className = 'orb';
+        statusText.textContent = 'Нажмите для начала разговора';
       }
     }
 
     function playAssistantAudio(base64Audio) {
-      state = 'SPEAKING';
-      stopAudioContext();
+      isProcessing = true;
+      cleanupAudio();
 
       orb.className = 'orb speaking';
       statusText.textContent = 'Ассистент говорит...';
@@ -359,22 +387,12 @@
 
       currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
       
-      currentAudio.onended = () => {
-        if (isCallActive) {
-          startListening();
-        } else {
-          orb.className = 'orb';
-          statusText.textContent = 'Нажмите для начала разговора';
-        }
-      };
-
-      currentAudio.onerror = () => {
-        if (isCallActive) startListening();
-      };
+      currentAudio.onended = () => resumeListening();
+      currentAudio.onerror = () => resumeListening();
 
       currentAudio.play().catch(e => {
         console.error('Ошибка воспроизведения:', e);
-        if (isCallActive) startListening();
+        resumeListening();
       });
     }
 
@@ -402,8 +420,8 @@
     }
 
     async function playText(btn, text) {
-      state = 'THINKING';
-      stopAudioContext();
+      isProcessing = true;
+      cleanupAudio();
 
       if (currentAudio) {
         currentAudio.pause();
@@ -422,11 +440,11 @@
         if (data.audio) {
           playAssistantAudio(data.audio);
         } else {
-          if (isCallActive) startListening();
+          resumeListening();
         }
       } catch (e) {
         console.error('Ошибка TTS:', e);
-        if (isCallActive) startListening();
+        resumeListening();
       }
     }
   </script>
