@@ -1,13 +1,10 @@
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import OpenAI, { toFile } from 'openai';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const OpenAI = require('openai');
+const { toFile } = require('openai');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -38,11 +35,11 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
   const userId = req.body.userId || 'default_user';
 
   try {
-    // 1. Преобразуем загруженный multer файл в правильный формат для OpenAI с явным расширением .webm
+    // Преобразуем файл с явно указанным расширением webm
     const fileBuffer = fs.readFileSync(filePath);
     const audioFile = await toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
 
-    // 2. Распознавание речи через Whisper
+    // Распознавание через Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
@@ -54,18 +51,16 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
       return res.json({ userText: '', text: '', audio: null });
     }
 
-    // 3. Получаем или инициализируем историю
+    // Обработка истории
     if (!userHistories.has(userId)) {
       userHistories.set(userId, []);
     }
     const history = userHistories.get(userId);
 
     history.push({ role: 'user', content: userText });
-
-    // Ограничиваем историю последними 10 сообщениями
     if (history.length > 10) history.shift();
 
-    // 4. Генерация ответа от ChatGPT
+    // Генерация ответа от ChatGPT
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -77,7 +72,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const assistantText = completion.choices[0].message.content;
     history.push({ role: 'assistant', content: assistantText });
 
-    // 5. Озвучка ответа через OpenAI TTS
+    // Озвучка через TTS
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'alloy',
@@ -97,7 +92,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     console.error('Ошибка бэкенда:', error);
     res.status(500).json({ error: error.message || 'Ошибка обработки голосового запроса' });
   } finally {
-    // Удаляем временный файл из папки uploads
     fs.unlink(filePath, () => {});
   }
 });
