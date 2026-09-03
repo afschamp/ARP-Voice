@@ -17,7 +17,6 @@ if (!fs.existsSync('uploads')) {
 
 const MEMORY_FILE = 'memory.json';
 
-// Загрузка памяти пользователей из файла
 function loadMemory() {
   if (fs.existsSync(MEMORY_FILE)) {
     try {
@@ -29,7 +28,6 @@ function loadMemory() {
   return {};
 }
 
-// Сохранение памяти пользователей в файл
 function saveMemory(memory) {
   fs.writeFileSync(MEMORY_FILE, JSON.stringify(memory, null, 2), 'utf8');
 }
@@ -44,7 +42,6 @@ const openai = new OpenAI({
 app.use(express.static('public'));
 app.use(express.json());
 
-// Получение истории конкретного пользователя при загрузке страницы
 app.get('/api/history/:userId', (req, res) => {
   const memory = loadMemory();
   const userHistory = memory[req.params.userId] || [];
@@ -63,7 +60,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const tempPath = `${filePath}.webm`;
     fs.renameSync(filePath, tempPath);
 
-    // 1. Распознавание речи Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempPath),
       model: 'whisper-1',
@@ -71,7 +67,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     const userText = transcription.text;
 
-    // Загружаем память пользователей
     const memory = loadMemory();
     const userHistory = memory[userId] || [];
 
@@ -105,7 +100,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
       { role: 'user', content: userText }
     ];
 
-    // 2. Генерация ответа GPT-4o-mini
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: messages,
@@ -113,7 +107,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     const aiText = completion.choices[0].message.content;
 
-    // 3. Озвучивание голосом Onyx
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'onyx',
@@ -125,7 +118,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
 
     fs.unlinkSync(tempPath);
 
-    // Сохраняем диалог в долгосрочную память
     userHistory.push({ role: 'user', content: userText });
     userHistory.push({ role: 'assistant', content: aiText });
     memory[userId] = userHistory;
@@ -142,7 +134,6 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
   }
 });
 
-// Отдельный эндпоинт для переозвучивания существующего текста
 app.post('/api/tts', async (req, res) => {
   try {
     const { text } = req.body;

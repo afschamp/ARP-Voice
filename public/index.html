@@ -149,7 +149,6 @@
   </div>
 
   <script>
-    // Получение или создание уникального ID пользователя
     let userId = localStorage.getItem('arp_user_id');
     if (!userId) {
       userId = 'user_' + Math.random().toString(36).substr(2, 9);
@@ -166,7 +165,6 @@
     const chatHistory = document.getElementById('chatHistory');
     const callBtn = document.getElementById('callBtn');
 
-    // Загрузка сохраненной истории с сервера
     async function loadUserHistory() {
       try {
         const res = await fetch(`/api/history/${userId}`);
@@ -252,7 +250,7 @@
 
           playAssistantAudio(data.audio);
         } else {
-          throw new Error(' Ошибка сервера');
+          throw new Error('Ошибка сервера');
         }
       } catch (err) {
         orb.className = 'orb';
@@ -271,7 +269,6 @@
 
       currentAudio.onended = () => {
         if (isCallActive) {
-          // Автоматически слушаем ответ пользователя дальше
           startRecording();
         } else {
           orb.className = 'orb';
@@ -294,7 +291,7 @@
         actionsDiv.className = 'msg-actions';
 
         actionsDiv.innerHTML = `
-          <button class="action-icon" onclick="playText('${text.replace(/'/g, "\\'")}')" title="Прослушать">🔊</button>
+          <button class="action-icon" onclick="playText(this, \`${text.replace(/`/g, '\\`')}\`)" title="Прослушать">🔊</button>
           <button class="action-icon" onclick="toggleLike(this)" title="Нравится">👍</button>
           <button class="action-icon" onclick="toggleLike(this)" title="Не нравится">👎</button>
         `;
@@ -305,7 +302,7 @@
       chatHistory.scrollTop = chatHistory.scrollHeight;
     }
 
-    async function playText(text) {
+    async function playText(btn, text) {
       statusText.textContent = 'Озвучиваю заново...';
       try {
         const res = await fetch('/api/tts', {
