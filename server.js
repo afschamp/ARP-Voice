@@ -83,10 +83,10 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     history.push({ role: 'user', content: userText });
     if (history.length > 10) history.shift();
 
-    // Ответ от GPT с расширенным лимитом токенов для полноценных ответов
+    // Ответ от GPT с запасом токенов под полные уроки и примеры
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 350,
+      max_tokens: 500,
       messages: [
         { role: 'system', content: fullSystemPrompt },
         ...history
