@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
+import { SYSTEM_PROMPT as knowledgeBasePrompt } from './knowledgeBase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,9 @@ const systemPrompt = `Ты — ARP Coordinator, интеллектуальный
 СТРОГОЕ ОПРЕДЕЛЕНИЕ И РАСШИФРОВКА:
 - ARP расшифровывается ИСКЛЮЧИТЕЛЬНО как Algorithm for Resolution of the Problem (Алгоритм Разрешения Проблем).
 - Никогда не расшифровывай ARP как Action-Resource-Purpose или какие-либо другие термины.
+
+ОСНОВНАЯ БАЗА ЗНАНИЙ ARP И FAMILY FORMULAS:
+${knowledgeBasePrompt}
 
 СПЕЦИАЛЬНЫЙ РЕЖИМ «АРП-ПЕДАГОГ»:
 - Если пользователь задает вопрос, связанный с воспитанием, обучением, школой, дисциплиной, поведением детей, классным руководством, родителем или учителем — ты включаешь режим АРП-Педагога.
