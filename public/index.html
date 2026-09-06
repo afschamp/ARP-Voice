@@ -335,7 +335,8 @@
       formData.append('userId', userId);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      // Увеличено время ожидания до 2 минут (120000 мс)
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
 
       try {
         const response = await fetch('/api/voice', { 
@@ -362,7 +363,6 @@
         clearTimeout(timeoutId);
         console.error('Ошибка обработки запроса:', err);
       } finally {
-        // Гарантированный выход из состояния обработки при любых исходах
         resumeListening();
       }
     }
