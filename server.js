@@ -83,10 +83,10 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     history.push({ role: 'user', content: userText });
     if (history.length > 20) history.shift();
 
-    // Ответ от GPT без искусственных сжатий и обрывов
+    // Генерация полного ответа от GPT
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 16384, // Сняли лимит с 500 до максимума для полноразмерных уроков
+      max_tokens: 4096, // Безопасный максимум токенов под длинные уроки
       messages: [
         { role: 'system', content: fullSystemPrompt },
         ...history
@@ -96,19 +96,30 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const assistantText = completion.choices[0].message.content;
     history.push({ role: 'assistant', content: assistantText });
 
-    // Озвучка ответа через TTS
-    const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'alloy',
-      input: assistantText,
-    });
+    // Обрезаем текст для TTS до 4000 символов, чтобы OpenAI TTS не выбивал ошибку 400
+    const textForTts = assistantText.length > 4000 
+      ? assistantText.slice(0, 4000) + '... Полный текст конспекта смотрите на экране.' 
+      : assistantText;
 
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    const base64Audio = buffer.toString('base64');
+    // Озвучка ответа через TTS
+    let base64Audio = null;
+    try {
+      const mp3 = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: 'alloy',
+        input: textForTts,
+      });
+
+      const buffer = Buffer.from(await mp3.arrayBuffer());
+      base64Audio = buffer.toString('base64');
+    } catch (ttsError) {
+      console.error('Ошибка генерации TTS:', ttsError.message);
+      // Если озвучка не удалась, текст всё равно отправится пользователю
+    }
 
     res.json({
       userText,
-      text: assistantText,
+      text: assistantText, // Полный текст занятия отдается клиенту
       audio: base64Audio
     });
 
