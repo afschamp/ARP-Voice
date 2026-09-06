@@ -14,8 +14,12 @@ const __dirname = path.dirname(__filename);
 const pedagogPath = path.join(__dirname, 'arp-pedagog.txt');
 let pedagogKnowledge = '';
 try {
-  pedagogKnowledge = fs.readFileSync(pedagogPath, 'utf8');
-  console.log('База АРП-Педагогики успешно загружена');
+  if (fs.existsSync(pedagogPath)) {
+    pedagogKnowledge = fs.readFileSync(pedagogPath, 'utf8');
+    console.log('База АРП-Педагогики успешно загружена');
+  } else {
+    console.warn('Предупреждение: файл arp-pedagog.txt не найден');
+  }
 } catch (err) {
   console.error('Ошибка чтения arp-pedagog.txt:', err.message);
 }
@@ -44,6 +48,13 @@ ${pedagogKnowledge}
 --- END ARP PEDAGOGY BASE ---
 `;
 
+// Вспомогательная функция для безопасного обрезания текста под OpenAI TTS (лимит 4096 символов)
+function prepareTtsText(text) {
+  if (!text) return '';
+  if (text.length <= 3500) return text;
+  return text.slice(0, 3500) + '... Полный текст лекции выведен на экран.';
+}
+
 app.get('/api/history/:userId', (req, res) => {
   const { userId } = req.params;
   const history = userHistories.get(userId) || [];
@@ -62,7 +73,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const fileBuffer = fs.readFileSync(filePath);
     const audioFile = await OpenAI.toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
 
-    // Распознавание речи через Whisper
+    // 1. Распознавание речи через Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
@@ -74,7 +85,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
       return res.json({ userText: '', text: '', audio: null });
     }
 
-    // История сообщений
+    // 2. История сообщений
     if (!userHistories.has(userId)) {
       userHistories.set(userId, []);
     }
@@ -83,10 +94,10 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     history.push({ role: 'user', content: userText });
     if (history.length > 20) history.shift();
 
-    // Генерация полного ответа от GPT
+    // 3. Генерация ответа от GPT (4096 токенов гарантируют полный текст)
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 4096, // Безопасный максимум токенов под длинные уроки
+      max_tokens: 4096,
       messages: [
         { role: 'system', content: fullSystemPrompt },
         ...history
@@ -96,14 +107,10 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     const assistantText = completion.choices[0].message.content;
     history.push({ role: 'assistant', content: assistantText });
 
-    // Обрезаем текст для TTS до 4000 символов, чтобы OpenAI TTS не выбивал ошибку 400
-    const textForTts = assistantText.length > 4000 
-      ? assistantText.slice(0, 4000) + '... Полный текст конспекта смотрите на экране.' 
-      : assistantText;
-
-    // Озвучка ответа через TTS
+    // 4. Озвучка ответа через TTS
     let base64Audio = null;
     try {
+      const textForTts = prepareTtsText(assistantText);
       const mp3 = await openai.audio.speech.create({
         model: 'tts-1',
         voice: 'alloy',
@@ -113,19 +120,19 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
       const buffer = Buffer.from(await mp3.arrayBuffer());
       base64Audio = buffer.toString('base64');
     } catch (ttsError) {
-      console.error('Ошибка генерации TTS:', ttsError.message);
-      // Если озвучка не удалась, текст всё равно отправится пользователю
+      console.error('Ошибка генерации TTS (аудио пропущено):', ttsError.message);
     }
 
+    // Возвращаем полный текст и безопасную озвучку
     res.json({
       userText,
-      text: assistantText, // Полный текст занятия отдается клиенту
+      text: assistantText,
       audio: base64Audio
     });
 
   } catch (error) {
-    console.error('Ошибка бэкенда:', error);
-    res.status(500).json({ error: error.message || 'Ошибка обработки голосового запроса' });
+    console.error('Критическая ошибка бэкенда:', error);
+    res.status(500).json({ error: error.message || 'Ошибка обработки запроса' });
   } finally {
     fs.unlink(filePath, () => {});
   }
@@ -136,10 +143,11 @@ app.post('/api/tts', async (req, res) => {
   if (!text) return res.status(400).json({ error: 'Текст не передан' });
 
   try {
+    const textForTts = prepareTtsText(text);
     const mp3 = await openai.audio.speech.create({
       model: 'tts-1',
       voice: 'alloy',
-      input: text,
+      input: textForTts,
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
