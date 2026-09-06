@@ -1,3 +1,5 @@
+// knowledgeBase.js
+
 import { FULL_ARP_BASE } from './fullBase.js';
 
 const ARP_CANON = `
