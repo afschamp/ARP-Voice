@@ -10,19 +10,27 @@ import { SYSTEM_PROMPT } from './knowledgeBase.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Чтение базы АРП-Педагогики из файла arp-pedagog.txt
-const pedagogPath = path.join(__dirname, 'arp-pedagog.txt');
-let pedagogKnowledge = '';
-try {
-  if (fs.existsSync(pedagogPath)) {
-    pedagogKnowledge = fs.readFileSync(pedagogPath, 'utf8');
-    console.log('База АРП-Педагогики успешно загружена');
-  } else {
-    console.warn('Предупреждение: файл arp-pedagog.txt не найден');
+// Вспомогательная функция для безопасного чтения текстовых файлов базы
+function loadKnowledgeFile(filename) {
+  try {
+    const filePath = path.join(__dirname, filename);
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      console.log(`База ${filename} успешно загружена (${content.length} символов)`);
+      return content;
+    } else {
+      console.warn(`Предупреждение: файл ${filename} не найден`);
+    }
+  } catch (err) {
+    console.error(`Ошибка чтения ${filename}:`, err.message);
   }
-} catch (err) {
-  console.error('Ошибка чтения arp-pedagog.txt:', err.message);
+  return '';
 }
+
+// Считываем все текстовые базы целиком
+const pedagogKnowledge = loadKnowledgeFile('arp-pedagog.txt');
+const schoolKnowledge = loadKnowledgeFile('arp-school.txt');
+const studentKnowledge = loadKnowledgeFile('arp-student.txt');
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -38,8 +46,14 @@ const openai = new OpenAI({
 // Хранилище истории диалогов в памяти
 const userHistories = new Map();
 
-// Объединяем новый глобальный ARP Voice Prompt с педагогической базой
+// Собираем ЕДИНЫЙ ПОЛНЫЙ SYSTEM PROMPT со всеми документами без исключения
 const fullSystemPrompt = `${SYSTEM_PROMPT}
+
+=== ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: ШКОЛЬНЫЙ ЭТАП ===
+${schoolKnowledge}
+
+=== ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: СТУДЕНЧЕСКИЙ ЭТАП ===
+${studentKnowledge}
 
 SPECIAL MODE "ARP-PEDAGOGUE":
 If the user asks about raising children, education, school, discipline, behavior, teachers, or parents, apply guidance from the Ak-Bermet ARP-Pedagogy framework:
@@ -52,7 +66,7 @@ ${pedagogKnowledge}
 function prepareTtsText(text) {
   if (!text) return '';
   if (text.length <= 3500) return text;
-  return text.slice(0, 3500) + '... Полный текст лекции выведен на экран.';
+  return text.slice(0, 3500) + '... Полный текст конспекта выведен на экран.';
 }
 
 app.get('/api/history/:userId', (req, res) => {
@@ -94,7 +108,7 @@ app.post('/api/voice', upload.single('audio'), async (req, res) => {
     history.push({ role: 'user', content: userText });
     if (history.length > 20) history.shift();
 
-    // 3. Генерация ответа от GPT (4096 токенов гарантируют полный текст)
+    // 3. Генерация ответа от GPT (4096 токенов гарантируют полный масштабный конспект)
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 4096,
