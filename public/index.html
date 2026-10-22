@@ -227,6 +227,13 @@ if (!userId) {
 
 let currentLang = localStorage.getItem('arp_lang') || 'ru';
 
+// Объявляем элементы DOM в самом начале, чтобы избежать ошибок
+const orb = document.getElementById('orb');
+const statusText = document.getElementById('status');
+const chatHistory = document.getElementById('chatHistory');
+const callBtn = document.getElementById('callBtn');
+const balanceDiv = document.getElementById('balance');
+
 const i18n = {
   ru: {
     startCall: 'Начать разговор',
@@ -275,7 +282,6 @@ function setLanguage(lang) {
   document.getElementById('langRu').classList.toggle('active', lang === 'ru');
   document.getElementById('langEn').classList.toggle('active', lang === 'en');
 
-  // Обновляем тексты в реальном времени, если не идет активный разговор
   if (!isCallActive && !isProcessing) {
     statusText.textContent = i18n[currentLang].initialStatus;
     callBtn.textContent = i18n[currentLang].startCall;
@@ -285,9 +291,6 @@ function setLanguage(lang) {
     balanceDiv.textContent = i18n[currentLang].balanceUnits + balance;
   }
 }
-
-// Применяем язык при загрузке
-setLanguage(currentLang);
 
 let balance = null;
 let mediaRecorder = null;
@@ -304,15 +307,12 @@ let speechStartTime = 0;
 let isProcessing = false;
 let callGeneration = 0;
 
-const orb = document.getElementById('orb');
-const statusText = document.getElementById('status');
-const chatHistory = document.getElementById('chatHistory');
-const callBtn = document.getElementById('callBtn');
-const balanceDiv = document.getElementById('balance');
-
 const NOISE_THRESHOLD = 12;
 const SILENCE_DELAY = 1000;
 const MIN_SPEECH_TIME = 500;
+
+// Применяем язык сразу после инициализации элементов
+setLanguage(currentLang);
 
 function updateBalance(value) {
   if (!Number.isInteger(value) || value < 0) return;
@@ -587,7 +587,7 @@ async function handleSpeechEnd(generation) {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'recording.webm');
   formData.append('userId', userId);
-  formData.append('language', currentLang); // Передаем выбранный язык на бэкенд
+  formData.append('language', currentLang);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(
