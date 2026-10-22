@@ -6,175 +6,562 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 import { SYSTEM_PROMPT } from './knowledgeBase.js';
+import {
+  getBalance,
+  createTestBalance,
+  spendUnit
+} from './balance.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Вспомогательная функция для безопасного чтения текстовых файлов базы
 function loadKnowledgeFile(filename) {
   try {
     const filePath = path.join(__dirname, filename);
+
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf8');
-      console.log(`База ${filename} успешно загружена (${content.length} символов)`);
+      console.log(`База ${filename} загружена`);
       return content;
-    } else {
-      console.warn(`Предупреждение: файл ${filename} не найден`);
     }
-  } catch (err) {
-    console.error(`Ошибка чтения ${filename}:`, err.message);
+
+    console.warn(`Файл ${filename} не найден`);
+  } catch (error) {
+    console.error(
+      `Ошибка загрузки ${filename}:`,
+      error.message
+    );
   }
+
   return '';
 }
 
-// Считываем все текстовые базы целиком
 const pedagogKnowledge = loadKnowledgeFile('arp-pedagog.txt');
 const schoolKnowledge = loadKnowledgeFile('arp-school.txt');
 const studentKnowledge = loadKnowledgeFile('arp-student.txt');
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+
+const upload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: 10 * 1024 * 1024
+  }
+});
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static('public'));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Хранилище истории диалогов в памяти
 const userHistories = new Map();
+const activeRequests = new Set();
 
-// Собираем ЕДИНЫЙ ПОЛНЫЙ SYSTEM PROMPT со всеми документами без исключения
-const fullSystemPrompt = `${SYSTEM_PROMPT}
+const TEST_MODE = process.env.ARP_TEST_MODE === 'true';
 
-=== ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: ШКОЛЬНЫЙ ЭТАП ===
-${schoolKnowledge}
-
-=== ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: СТУДЕНЧЕСКИЙ ЭТАП ===
-${studentKnowledge}
-
-SPECIAL MODE "ARP-PEDAGOGUE":
-If the user asks about raising children, education, school, discipline, behavior, teachers, or parents, apply guidance from the Ak-Bermet ARP-Pedagogy framework:
---- START ARP PEDAGOGY BASE ---
-${pedagogKnowledge}
---- END ARP PEDAGOGY BASE ---
-`;
-
-// Вспомогательная функция для безопасного обрезания текста под OpenAI TTS (лимит 4096 символов)
-function prepareTtsText(text) {
-  if (!text) return '';
-  if (text.length <= 3500) return text;
-  return text.slice(0, 3500) + '... Полный текст конспекта выведен на экран.';
+function validUserId(id) {
+  return typeof id === 'string' &&
+    /^[a-zA-Z0-9_-]{1,100}$/.test(id);
 }
 
-app.get('/api/history/:userId', (req, res) => {
-  const { userId } = req.params;
-  const history = userHistories.get(userId) || [];
-  res.json({ history });
-});
+function balanceForUser(userId) {
+  return TEST_MODE
+    ? createTestBalance(userId)
+    : getBalance(userId);
+}
 
-app.post('/api/voice', upload.single('audio'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Аудиофайл не передан' });
+const fullSystemPrompt = `${SYSTEM_PROMPT}
+
+==================================================
+ГЛАВНЫЕ ПРАВИЛА РАБОТЫ ГОЛОСОВОГО АРП
+==================================================
+
+АРП — Алгоритм разрешения проблем.
+
+Ты интеллектуальный помощник учителя,
+а также собеседник для родителей, детей
+и взрослых людей.
+
+Твоя задача — помогать людям осмысленно
+решать проблемы, развивать характер,
+ответственность, самостоятельность
+и другие человеческие качества.
+
+Сам определяй нужный формат ответа.
+
+--------------------------------------------------
+РЕЖИМ 1. ОБЫЧНЫЙ РАЗГОВОР
+--------------------------------------------------
+
+Если пользователь задаёт обычный вопрос,
+просит объяснение, совет или обсуждает
+жизненную ситуацию:
+
+- Отвечай естественно и по существу.
+- Обычно используй 2–5 небольших абзацев.
+- Не превращай ответ в конспект урока.
+- Не создавай автоматически заголовки
+  занятий, цели, упражнения и домашние задания.
+- Используй формулы АРП, когда они помогают.
+- Приводи понятные жизненные примеры.
+- При необходимости задавай один вопрос.
+- Не повторяй одну мысль много раз.
+
+Если пользователь спрашивает
+"Что такое АРП?", дай краткое объяснение,
+а не учебную лекцию.
+
+--------------------------------------------------
+РЕЖИМ 2. ПОМОЩНИК УЧИТЕЛЯ
+--------------------------------------------------
+
+Если пользователь просит подготовить урок,
+классный час, конспект, тренинг, занятие,
+методическую разработку или программу:
+
+Создавай полноценный практический материал,
+которым учитель сможет пользоваться.
+
+Учитывай:
+- тему занятия;
+- возраст учеников;
+- класс;
+- продолжительность;
+- цели учителя;
+- условия проведения.
+
+Если время не указано, используй 45 минут
+как рабочее предположение и сообщай об этом.
+
+Для подробного урока используй структуру:
+
+1. Название темы.
+2. Возраст или класс учеников.
+3. Продолжительность занятия.
+4. Цель и ожидаемые результаты.
+5. Главная идея урока.
+6. Подходящие формулы АРП.
+7. Интересное вступление.
+8. Объяснение темы.
+9. Жизненные ситуации.
+10. Вопросы для обсуждения.
+11. Практические упражнения и игры.
+12. Небольшой эксперимент АРП.
+13. Подведение итогов.
+14. Рефлексия учеников.
+15. Домашнее задание при необходимости.
+16. Рекомендации учителю.
+
+Распределяй время по этапам урока.
+Подбирай задания с учётом возраста.
+Используй базу знаний и философию АРП.
+Не добавляй упражнения ради объёма.
+
+Если просят краткий план, дай краткий план.
+Если просят подробный конспект,
+подготовь подробный конспект.
+
+--------------------------------------------------
+РЕЖИМ 3. ОБУЧЕНИЕ САМОМУ АРП
+--------------------------------------------------
+
+Если пользователь просит:
+"Научи меня АРП",
+"Как пользоваться формулами АРП?"
+или хочет освоить методику:
+
+- Объясняй материал постепенно.
+- Начинай с простых формул и ситуаций.
+- Предлагай маленькие жизненные эксперименты.
+- Проверяй понимание короткими вопросами.
+- Помогай применять АРП самостоятельно.
+
+Не выдавай сразу огромную лекцию.
+
+--------------------------------------------------
+ОСНОВНЫЕ ПРИНЦИПЫ
+--------------------------------------------------
+
+Формула проблемы:
+
+Проблема — это разница между тем,
+чего человек хочет, и тем, что он имеет.
+
+Принцип действия и противодействия:
+
+Поступки человека вызывают ответную
+реакцию окружающих. Помогай осмысливать
+последствия собственных действий.
+
+Принцип чувства меры:
+
+Стремясь к успеху, человек не должен
+жертвовать здоровьем, близкими,
+детьми и уже имеющимся счастьем.
+
+Принцип "Не поверь — проверь":
+
+Помогай человеку проверять полезные идеи
+через небольшие жизненные эксперименты.
+
+Высшая цель АРП — не давать человеку
+готовые решения, а научить его
+обходиться без подсказок.
+
+--------------------------------------------------
+ВАЖНОЕ ПРАВИЛО ПРИОРИТЕТА
+--------------------------------------------------
+
+Эти правила определяют ФОРМАТ ответа.
+
+Шаблоны учебных конспектов из баз знаний
+применяй только тогда, когда пользователь
+действительно просит учебный материал.
+
+Обычный вопрос не является просьбой
+создать урок.
+
+==================================================
+ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: ШКОЛЬНЫЙ ЭТАП
+==================================================
+
+${schoolKnowledge}
+
+==================================================
+ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: СТУДЕНЧЕСКИЙ ЭТАП
+==================================================
+
+${studentKnowledge}
+
+==================================================
+ДОПОЛНИТЕЛЬНАЯ БАЗА ЗНАНИЙ: АРП-ПЕДАГОГ
+==================================================
+
+Если пользователь спрашивает о воспитании,
+школе, дисциплине, поведении детей,
+учителях или родителях, используй
+методику АРП-педагогики.
+
+${pedagogKnowledge}
+
+==================================================
+КОНЕЦ БАЗЫ ЗНАНИЙ
+==================================================
+`;
+
+function prepareTtsText(text) {
+  if (!text) return '';
+
+  if (text.length <= 3500) {
+    return text;
   }
 
-  const filePath = req.file.path;
-  const userId = req.body.userId || 'default_user';
+  return text.slice(0, 3500) +
+    '... Полный текст конспекта выведен на экран.';
+}
 
-  try {
-    const fileBuffer = fs.readFileSync(filePath);
-    const audioFile = await OpenAI.toFile(fileBuffer, 'recording.webm', { type: 'audio/webm' });
+// Проверка баланса
+app.get('/api/balance/:userId', (req, res) => {
+  const userId = req.params.userId;
 
-    // 1. Распознавание речи через Whisper
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: 'whisper-1',
+  if (!validUserId(userId)) {
+    return res.status(400).json({
+      error: 'Неверный userId'
     });
+  }
 
-    const userText = transcription.text;
+  res.json({
+    balance: balanceForUser(userId)
+  });
+});
 
-    if (!userText || !userText.trim()) {
-      return res.json({ userText: '', text: '', audio: null });
-    }
+// История разговора
+app.get('/api/history/:userId', (req, res) => {
+  const userId = req.params.userId;
 
-    // 2. История сообщений
-    if (!userHistories.has(userId)) {
-      userHistories.set(userId, []);
-    }
-    const history = userHistories.get(userId);
-
-    history.push({ role: 'user', content: userText });
-    if (history.length > 20) history.shift();
-
-    // 3. Генерация ответа от GPT (4096 токенов гарантируют полный масштабный конспект)
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 4096,
-      messages: [
-        { role: 'system', content: fullSystemPrompt },
-        ...history
-      ]
+  if (!validUserId(userId)) {
+    return res.status(400).json({
+      error: 'Неверный userId'
     });
+  }
 
-    const assistantText = completion.choices[0].message.content;
-    history.push({ role: 'assistant', content: assistantText });
+  res.json({
+    history: userHistories.get(userId) || []
+  });
+});
 
-    // 4. Озвучка ответа через TTS
-    let base64Audio = null;
+// Основной голосовой запрос
+app.post(
+  '/api/voice',
+  upload.single('audio'),
+  async (req, res) => {
+    const filePath = req.file?.path;
+    const userId = req.body?.userId;
+    const userLang = req.body?.language || 'ru'; // Принимаем язык от клиента (по умолчанию 'ru')
+    let locked = false;
+
     try {
-      const textForTts = prepareTtsText(assistantText);
-      const mp3 = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: textForTts,
+      if (!req.file) {
+        return res.status(400).json({
+          error: 'Аудиофайл не передан'
+        });
+      }
+
+      if (!validUserId(userId)) {
+        return res.status(400).json({
+          error: 'Неверный userId'
+        });
+      }
+
+      if (balanceForUser(userId) < 1) {
+        return res.status(402).json({
+          error: 'Единицы закончились',
+          balance: 0
+        });
+      }
+
+      if (activeRequests.has(userId)) {
+        return res.status(409).json({
+          error: 'Предыдущий запрос ещё обрабатывается',
+          balance: getBalance(userId)
+        });
+      }
+
+      activeRequests.add(userId);
+      locked = true;
+
+      // Распознавание речи
+      const fileBuffer = fs.readFileSync(filePath);
+
+      const audioFile = await OpenAI.toFile(
+        fileBuffer,
+        'recording.webm',
+        { type: 'audio/webm' }
+      );
+
+      const transcription =
+        await openai.audio.transcriptions.create({
+          file: audioFile,
+          model: 'whisper-1',
+          language: userLang // Указываем whisper язык для более точного распознавания
+        });
+
+      const userText =
+        (transcription.text || '').trim();
+
+      // Пустая запись не списывает единицы
+      if (!userText) {
+        return res.json({
+          userText: '',
+          text: '',
+          audio: null,
+          balance: getBalance(userId)
+        });
+      }
+
+      const oldHistory =
+        userHistories.get(userId) || [];
+
+      // Формируем языковую инструкцию для модели
+      const languageInstruction = (userLang === 'en')
+        ? "IMPORTANT: Respond strictly in English. Follow the 6-step ARP framework."
+        : "ВАЖНО: Отвечай строго на русском языке. Следуй 6-шаговому фреймворку ARP.";
+
+      // Генерация ответа
+      const completion =
+        await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          max_tokens: 4096,
+          messages: [
+            {
+              role: 'system',
+              content: `${fullSystemPrompt}\n\n${languageInstruction}`
+            },
+            ...oldHistory,
+            {
+              role: 'user',
+              content: userText
+            }
+          ]
+        });
+
+      const assistantText =
+        completion.choices[0]?.message?.content || '';
+
+      if (!assistantText.trim()) {
+        throw new Error(
+          'OpenAI вернул пустой ответ'
+        );
+      }
+
+      // Озвучивание ответа
+      let base64Audio = null;
+
+      try {
+        const mp3 =
+          await openai.audio.speech.create({
+            model: 'tts-1',
+            voice: 'alloy',
+            input: prepareTtsText(assistantText)
+          });
+
+        base64Audio = Buffer.from(
+          await mp3.arrayBuffer()
+        ).toString('base64');
+
+      } catch (ttsError) {
+        console.error(
+          'Ошибка озвучки:',
+          ttsError.message
+        );
+      }
+
+      // Списание после успешного ответа
+      if (!spendUnit(userId)) {
+        return res.status(402).json({
+          error: 'Единицы закончились',
+          balance: getBalance(userId)
+        });
+      }
+
+      const nextHistory = [
+        ...oldHistory,
+        {
+          role: 'user',
+          content: userText
+        },
+        {
+          role: 'assistant',
+          content: assistantText
+        }
+      ].slice(-20);
+
+      userHistories.set(
+        userId,
+        nextHistory
+      );
+
+      res.json({
+        userText,
+        text: assistantText,
+        audio: base64Audio,
+        balance: getBalance(userId)
       });
 
-      const buffer = Buffer.from(await mp3.arrayBuffer());
-      base64Audio = buffer.toString('base64');
-    } catch (ttsError) {
-      console.error('Ошибка генерации TTS (аудио пропущено):', ttsError.message);
+    } catch (error) {
+      console.error(
+        'Ошибка голосового запроса:',
+        error.status || '',
+        error.message
+      );
+
+      res.status(500).json({
+        error: 'Ошибка обработки запроса',
+        balance: validUserId(userId)
+          ? getBalance(userId)
+          : undefined
+      });
+
+    } finally {
+      if (locked) {
+        activeRequests.delete(userId);
+      }
+
+      if (filePath) {
+        fs.unlink(filePath, () => {});
+      }
     }
-
-    // Возвращаем полный текст и безопасную озвучку
-    res.json({
-      userText,
-      text: assistantText,
-      audio: base64Audio
-    });
-
-  } catch (error) {
-    console.error('Критическая ошибка бэкенда:', error);
-    res.status(500).json({ error: error.message || 'Ошибка обработки запроса' });
-  } finally {
-    fs.unlink(filePath, () => {});
   }
-});
+);
 
+// Повторная озвучка
 app.post('/api/tts', async (req, res) => {
-  const { text } = req.body;
-  if (!text) return res.status(400).json({ error: 'Текст не передан' });
+  const { text, userId } = req.body || {};
+
+  if (!validUserId(userId)) {
+    return res.status(400).json({
+      error: 'Неверный userId'
+    });
+  }
+
+  if (
+    typeof text !== 'string' ||
+    !text.trim() ||
+    text.length > 10000
+  ) {
+    return res.status(400).json({
+      error: 'Неверный текст'
+    });
+  }
+
+  if (balanceForUser(userId) < 1) {
+    return res.status(402).json({
+      error: 'Единицы закончились',
+      balance: 0
+    });
+  }
+
+  if (activeRequests.has(userId)) {
+    return res.status(409).json({
+      error: 'Предыдущий запрос ещё обрабатывается'
+    });
+  }
+
+  activeRequests.add(userId);
 
   try {
-    const textForTts = prepareTtsText(text);
-    const mp3 = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'alloy',
-      input: textForTts,
+    const mp3 =
+      await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: 'alloy',
+        input: prepareTtsText(text)
+      });
+
+    const audio = Buffer.from(
+      await mp3.arrayBuffer()
+    ).toString('base64');
+
+    // Единица списывается только
+    // после успешного озвучивания
+    if (!spendUnit(userId)) {
+      return res.status(402).json({
+        error: 'Единицы закончились',
+        balance: getBalance(userId)
+      });
+    }
+
+    res.json({
+      audio,
+      balance: getBalance(userId)
     });
 
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    const base64Audio = buffer.toString('base64');
-
-    res.json({ audio: base64Audio });
   } catch (error) {
-    console.error('Ошибка TTS:', error);
-    res.status(500).json({ error: 'Ошибка генерации озвучки' });
+    console.error(
+      'Ошибка TTS:',
+      error.status || '',
+      error.message
+    );
+
+    res.status(500).json({
+      error: 'Ошибка генерации озвучки',
+      balance: getBalance(userId)
+    });
+
+  } finally {
+    activeRequests.delete(userId);
   }
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
+  console.log(
+    `Сервер запущен на порту ${PORT}`
+  );
+  console.log(
+    `Тестовый режим: ${TEST_MODE}`
+  );
 });

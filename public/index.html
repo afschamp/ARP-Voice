@@ -1,461 +1,835 @@
 ﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ARP Voice Assistant</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: #0d0f12;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px;
-    }
-    .main-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 15px;
-      width: 100%;
-      max-width: 600px;
-      margin-top: 20px;
-    }
-    .orb {
-      width: 140px;
-      height: 140px;
-      border-radius: 50%;
-      background: radial-gradient(circle, #00d2ff 0%, #0072ff 100%);
-      box-shadow: 0 0 50px rgba(0, 210, 255, 0.4);
-      transition: all 0.3s ease;
-      flex-shrink: 0;
-    }
-    .orb.recording {
-      background: radial-gradient(circle, #ff416c 0%, #ff4b2b 100%);
-      box-shadow: 0 0 70px rgba(255, 65, 108, 0.7);
-    }
-    .orb.thinking {
-      background: radial-gradient(circle, #f7b731 0%, #ffa801 100%);
-      box-shadow: 0 0 60px rgba(247, 183, 49, 0.6);
-      animation: pulse 1.5s infinite alternate;
-    }
-    .orb.speaking {
-      background: radial-gradient(circle, #00ffcc 0%, #0088ff 100%);
-      box-shadow: 0 0 80px rgba(0, 255, 204, 0.8);
-      animation: pulse 0.8s infinite alternate;
-    }
-    @keyframes pulse {
-      0% { transform: scale(1); }
-      100% { transform: scale(1.06); }
-    }
-    .status {
-      font-size: 1.05rem;
-      color: #a0a5b5;
-    }
-    .chat-history {
-      width: 100%;
-      max-width: 600px;
-      flex-grow: 1;
-      overflow-y: auto;
-      margin: 15px 0;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      padding-right: 5px;
-    }
-    .msg-wrapper {
-      display: flex;
-      flex-direction: column;
-      max-width: 85%;
-    }
-    .msg-wrapper.user { align-self: flex-end; }
-    .msg-wrapper.assistant { align-self: flex-start; }
-    
-    .msg {
-      padding: 12px 16px;
-      border-radius: 14px;
-      font-size: 0.95rem;
-      line-height: 1.4;
-      word-wrap: break-word;
-    }
-    .msg.user {
-      background: #2563eb;
-      color: #fff;
-      border-bottom-right-radius: 4px;
-    }
-    .msg.assistant {
-      background: rgba(255, 255, 255, 0.08);
-      color: #e5e7eb;
-      border-bottom-left-radius: 4px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARP Voice Assistant</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-    .msg-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 6px;
-      padding: 0 4px;
-    }
-    .action-icon {
-      background: none;
-      border: none;
-      color: #9ca3af;
-      cursor: pointer;
-      font-size: 0.9rem;
-      padding: 4px;
-      border-radius: 4px;
-      transition: color 0.2s;
-    }
-    .action-icon:hover { color: #ffffff; }
+body {
+  background: #0d0f12;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+}
 
-    .controls {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .main-btn {
-      background: #2563eb;
-      color: white;
-      border: none;
-      padding: 16px 36px;
-      font-size: 1.05rem;
-      font-weight: 600;
-      border-radius: 30px;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
-    }
-    .main-btn.active { background: #dc2626; }
-    .main-btn:hover { opacity: 0.9; }
-  </style>
+.top-bar {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.lang-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9ca3af;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.lang-btn.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.main-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+  max-width: 600px;
+  margin-top: 10px;
+}
+
+.orb {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #00d2ff, #0072ff);
+  box-shadow: 0 0 50px rgba(0,210,255,.4);
+  transition: all .3s ease;
+  flex-shrink: 0;
+}
+
+.orb.recording {
+  background: radial-gradient(circle, #ff416c, #ff4b2b);
+  box-shadow: 0 0 70px rgba(255,65,108,.7);
+}
+
+.orb.thinking {
+  background: radial-gradient(circle, #f7b731, #ffa801);
+  box-shadow: 0 0 60px rgba(247,183,49,.6);
+  animation: pulse 1.5s infinite alternate;
+}
+
+.orb.speaking {
+  background: radial-gradient(circle, #00ffcc, #0088ff);
+  box-shadow: 0 0 80px rgba(0,255,204,.8);
+  animation: pulse .8s infinite alternate;
+}
+
+@keyframes pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.06); }
+}
+
+.status {
+  font-size: 1.05rem;
+  color: #a0a5b5;
+  text-align: center;
+}
+
+.balance {
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 25px;
+  padding: 10px 18px;
+  color: #93c5fd;
+  font-size: .95rem;
+}
+
+.balance.empty {
+  color: #fca5a5;
+  border-color: #dc2626;
+}
+
+.chat-history {
+  width: 100%;
+  max-width: 600px;
+  flex-grow: 1;
+  overflow-y: auto;
+  margin: 15px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 5px;
+}
+
+.msg-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.msg-wrapper.user { align-self: flex-end; }
+.msg-wrapper.assistant { align-self: flex-start; }
+
+.msg {
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: .95rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.msg.user {
+  background: #2563eb;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.msg.assistant {
+  background: rgba(255,255,255,.08);
+  color: #e5e7eb;
+  border-bottom-left-radius: 4px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+
+.msg-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+.action-icon {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: .95rem;
+  padding: 4px;
+}
+
+.action-icon:hover { color: white; }
+.action-icon:disabled { opacity: .4; cursor: wait; }
+
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.main-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 16px 36px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-radius: 30px;
+  cursor: pointer;
+}
+
+.main-btn.active { background: #dc2626; }
+.main-btn:hover { opacity: .9; }
+.main-btn:disabled { opacity: .5; cursor: wait; }
+</style>
 </head>
+
 <body>
-  <div class="main-container">
-    <div id="orb" class="orb"></div>
-    <div id="status" class="status">Нажмите для начала разговора</div>
+
+<div class="top-bar">
+  <button id="langRu" class="lang-btn active" onclick="setLanguage('ru')">РУС</button>
+  <button id="langEn" class="lang-btn" onclick="setLanguage('en')">ENG</button>
+</div>
+
+<div class="main-container">
+  <div id="orb" class="orb"></div>
+  <div id="status" class="status">
+    Нажмите для начала разговора
   </div>
-
-  <div id="chatHistory" class="chat-history"></div>
-
-  <div class="controls">
-    <button id="callBtn" class="main-btn">Начать разговор</button>
+  <div id="balance" class="balance">
+    Проверяем баланс...
   </div>
+</div>
 
-  <script>
-    let userId = localStorage.getItem('arp_user_id');
-    if (!userId) {
-      userId = 'user_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('arp_user_id', userId);
-    }
+<div id="chatHistory" class="chat-history"></div>
 
-    let mediaRecorder = null;
-    let currentStream = null;
-    let audioChunks = [];
-    let isCallActive = false;
-    let currentAudio = null;
+<div class="controls">
+  <button id="callBtn" class="main-btn">
+    Начать разговор
+  </button>
+</div>
 
-    let audioContext = null;
-    let analyser = null;
-    let microphone = null;
-    let silenceTimer = null;
-    let speechDetected = false;
-    let speechStartTime = 0;
-    let isProcessing = false;
+<script>
+let userId = localStorage.getItem('arp_user_id');
 
-    const orb = document.getElementById('orb');
-    const statusText = document.getElementById('status');
-    const chatHistory = document.getElementById('chatHistory');
-    const callBtn = document.getElementById('callBtn');
+if (!userId) {
+  userId = 'user_' + Math.random().toString(36).slice(2, 11);
+  localStorage.setItem('arp_user_id', userId);
+}
 
-    const NOISE_THRESHOLD = 12;
-    const SILENCE_DELAY = 1000;
-    const MIN_SPEECH_TIME = 500;
+let currentLang = localStorage.getItem('arp_lang') || 'ru';
 
-    async function loadUserHistory() {
-      try {
-        const res = await fetch(`/api/history/${userId}`);
-        const data = await res.json();
-        if (data.history) {
-          data.history.forEach(msg => {
-            addMessageToUI(msg.role, msg.content);
-          });
-        }
-      } catch (e) {
-        console.error('Ошибка истории:', e);
-      }
-    }
-    loadUserHistory();
+const i18n = {
+  ru: {
+    startCall: 'Начать разговор',
+    stopCall: 'Завершить разговор',
+    initialStatus: 'Нажмите для начала разговора',
+    checkingBalance: 'Проверяем баланс...',
+    balanceUnits: 'Осталось единиц: ',
+    balanceUnavailable: 'Баланс недоступен',
+    noUnits: 'Единицы закончились. Для продолжения нужно пополнить баланс.',
+    listening: 'Слушаю вас... Говорите',
+    thinking: 'Думаю и обрабатываю...',
+    speaking: 'Ассистент говорит...',
+    callEnded: 'Разговор завершён',
+    micError: 'Ошибка доступа к микрофону',
+    netError: 'Ошибка обработки. Попробуйте ещё раз.',
+    ttsError: 'Ошибка повторной озвучки',
+    repeatListen: 'Прослушать повторно',
+    you: 'Вы: ',
+    arp: 'ARP: '
+  },
+  en: {
+    startCall: 'Start Conversation',
+    stopCall: 'End Conversation',
+    initialStatus: 'Click to start conversation',
+    checkingBalance: 'Checking balance...',
+    balanceUnits: 'Units remaining: ',
+    balanceUnavailable: 'Balance unavailable',
+    noUnits: 'Units ran out. Please top up your balance to continue.',
+    listening: 'Listening... Speak now',
+    thinking: 'Thinking and processing...',
+    speaking: 'Assistant is speaking...',
+    callEnded: 'Conversation ended',
+    micError: 'Microphone access error',
+    netError: 'Processing error. Please try again.',
+    ttsError: 'TTS playback error',
+    repeatListen: 'Listen again',
+    you: 'You: ',
+    arp: 'ARP: '
+  }
+};
 
-    callBtn.addEventListener('click', () => {
-      if (!isCallActive) {
-        startCall();
-      } else {
-        stopCall();
-      }
-    });
+function setLanguage(lang) {
+  currentLang = lang;
+  localStorage.setItem('arp_lang', lang);
 
-    function startCall() {
-      isCallActive = true;
-      isProcessing = false;
-      callBtn.textContent = 'Завершить разговор';
-      callBtn.classList.add('active');
-      startListening();
-    }
+  document.getElementById('langRu').classList.toggle('active', lang === 'ru');
+  document.getElementById('langEn').classList.toggle('active', lang === 'en');
 
-    function stopCall() {
-      isCallActive = false;
-      isProcessing = false;
-      callBtn.textContent = 'Начать разговор';
-      callBtn.classList.remove('active');
-      cleanupAudio();
+  // Обновляем тексты в реальном времени, если не идет активный разговор
+  if (!isCallActive && !isProcessing) {
+    statusText.textContent = i18n[currentLang].initialStatus;
+    callBtn.textContent = i18n[currentLang].startCall;
+  }
+  
+  if (balance !== null) {
+    balanceDiv.textContent = i18n[currentLang].balanceUnits + balance;
+  }
+}
 
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
-      }
-      orb.className = 'orb';
-      statusText.textContent = 'Разговор завершен';
-    }
+// Применяем язык при загрузке
+setLanguage(currentLang);
 
-    function cleanupAudio() {
-      clearTimeout(silenceTimer);
-      silenceTimer = null;
+let balance = null;
+let mediaRecorder = null;
+let currentStream = null;
+let audioChunks = [];
+let isCallActive = false;
+let currentAudio = null;
+let audioContext = null;
+let analyser = null;
+let microphone = null;
+let silenceTimer = null;
+let speechDetected = false;
+let speechStartTime = 0;
+let isProcessing = false;
+let callGeneration = 0;
 
-      if (mediaRecorder) {
-        mediaRecorder.onstop = null;
-        if (mediaRecorder.state !== 'inactive') {
-          try { mediaRecorder.stop(); } catch(e){}
-        }
-        mediaRecorder = null;
-      }
+const orb = document.getElementById('orb');
+const statusText = document.getElementById('status');
+const chatHistory = document.getElementById('chatHistory');
+const callBtn = document.getElementById('callBtn');
+const balanceDiv = document.getElementById('balance');
 
-      if (currentStream) {
-        currentStream.getTracks().forEach(t => t.stop());
-        currentStream = null;
-      }
+const NOISE_THRESHOLD = 12;
+const SILENCE_DELAY = 1000;
+const MIN_SPEECH_TIME = 500;
 
-      if (audioContext) {
-        if (audioContext.state !== 'closed') {
-          audioContext.close().catch(() => {});
-        }
-        audioContext = null;
-      }
-    }
+function updateBalance(value) {
+  if (!Number.isInteger(value) || value < 0) return;
 
-    async function startListening() {
-      if (!isCallActive || isProcessing) return;
+  balance = value;
+  balanceDiv.textContent = i18n[currentLang].balanceUnits + value;
+  balanceDiv.classList.toggle('empty', value === 0);
+}
 
-      cleanupAudio();
-      speechDetected = false;
-      speechStartTime = 0;
-      audioChunks = [];
+async function loadBalance() {
+  try {
+    const res = await fetch(
+      '/api/balance/' + encodeURIComponent(userId),
+      { cache: 'no-store' }
+    );
 
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(currentStream);
+    if (!res.ok) throw new Error('Ошибка проверки баланса');
 
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        microphone = audioContext.createMediaStreamSource(currentStream);
-        microphone.connect(analyser);
-        analyser.fftSize = 512;
+    const data = await res.json();
+    updateBalance(data.balance);
+    return data.balance;
+  } catch (err) {
+    console.error('Ошибка баланса:', err);
+    balanceDiv.textContent = i18n[currentLang].balanceUnavailable;
+    balance = null;
+    return null;
+  }
+}
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunks.push(e.data);
-        };
+async function loadUserHistory() {
+  try {
+    const res = await fetch(
+      '/api/history/' + encodeURIComponent(userId)
+    );
 
-        mediaRecorder.onstop = () => {
-          handleSpeechEnd();
-        };
+    if (!res.ok) return;
 
-        mediaRecorder.start();
-        orb.className = 'orb recording';
-        statusText.textContent = 'Слушаю вас... Говорите';
+    const data = await res.json();
 
-        monitorSilence();
-      } catch (err) {
-        statusText.textContent = 'Ошибка микрофона';
-        console.error(err);
-        stopCall();
-      }
-    }
-
-    function monitorSilence() {
-      if (!analyser) return;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      function checkAudio() {
-        if (!isCallActive || isProcessing || !mediaRecorder || mediaRecorder.state !== 'recording') return;
-
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        let average = sum / dataArray.length;
-
-        if (average > NOISE_THRESHOLD) {
-          if (!speechDetected) {
-            speechDetected = true;
-            speechStartTime = Date.now();
-          }
-          clearTimeout(silenceTimer);
-          silenceTimer = null;
-        } else if (speechDetected && !silenceTimer) {
-          silenceTimer = setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-              mediaRecorder.stop();
-            }
-          }, SILENCE_DELAY);
-        }
-
-        requestAnimationFrame(checkAudio);
-      }
-
-      checkAudio();
-    }
-
-    async function handleSpeechEnd() {
-      const speechDuration = Date.now() - speechStartTime;
-
-      if (!speechDetected || speechDuration < MIN_SPEECH_TIME || audioChunks.length === 0) {
-        if (isCallActive && !isProcessing) startListening();
-        return;
-      }
-
-      isProcessing = true;
-      orb.className = 'orb thinking';
-      statusText.textContent = 'Думаю и обрабатываю...';
-
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('userId', userId);
-
-      const controller = new AbortController();
-      // Увеличено время ожидания до 2 минут (120000 мс)
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
-
-      try {
-        const response = await fetch('/api/voice', { 
-          method: 'POST', 
-          body: formData,
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) throw new Error('Ошибка сервера');
-
-        const data = await response.json();
-
-        if (data.userText && data.userText.trim() !== '') {
-          addMessageToUI('user', data.userText);
-          addMessageToUI('assistant', data.text);
-
-          if (data.audio) {
-            await playAssistantAudio(data.audio);
-            return;
-          }
-        }
-      } catch (err) {
-        clearTimeout(timeoutId);
-        console.error('Ошибка обработки запроса:', err);
-      } finally {
-        resumeListening();
-      }
-    }
-
-    function resumeListening() {
-      isProcessing = false;
-      if (isCallActive) {
-        setTimeout(startListening, 300);
-      } else {
-        orb.className = 'orb';
-        statusText.textContent = 'Нажмите для начала разговора';
-      }
-    }
-
-    function playAssistantAudio(base64Audio) {
-      return new Promise((resolve) => {
-        isProcessing = true;
-        cleanupAudio();
-
-        orb.className = 'orb speaking';
-        statusText.textContent = 'Ассистент говорит...';
-
-        if (currentAudio) {
-          currentAudio.pause();
-        }
-
-        currentAudio = new Audio("data:audio/mp3;base64," + base64Audio);
-        
-        const finishPlay = () => {
-          currentAudio = null;
-          resolve();
-        };
-
-        currentAudio.onended = finishPlay;
-        currentAudio.onerror = finishPlay;
-
-        currentAudio.play().catch(e => {
-          console.error('Ошибка воспроизведения:', e);
-          finishPlay();
-        });
+    if (Array.isArray(data.history)) {
+      data.history.forEach(msg => {
+        addMessageToUI(msg.role, msg.content);
       });
     }
+  } catch (err) {
+    console.error('Ошибка истории:', err);
+  }
+}
 
-    function addMessageToUI(role, text) {
-      const wrapper = document.createElement('div');
-      wrapper.className = `msg-wrapper ${role}`;
+function showNoUnits() {
+  stopCall();
+  statusText.textContent = i18n[currentLang].noUnits;
+}
 
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `msg ${role}`;
-      msgDiv.textContent = role === 'user' ? `Вы: ${text}` : `ARP: ${text}`;
-      wrapper.appendChild(msgDiv);
+callBtn.addEventListener('click', async () => {
+  if (isCallActive) {
+    stopCall();
+    return;
+  }
 
-      if (role === 'assistant') {
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'msg-actions';
+  callBtn.disabled = true;
+  const available = await loadBalance();
+  callBtn.disabled = false;
 
-        actionsDiv.innerHTML = `
-          <button class="action-icon" onclick="playText(this, \`${text.replace(/`/g, '\\`')}\`)" title="Прослушать">🔊</button>
-        `;
-        wrapper.appendChild(actionsDiv);
-      }
+  if (available === null) {
+    statusText.textContent = i18n[currentLang].balanceUnavailable;
+    return;
+  }
 
-      chatHistory.appendChild(wrapper);
-      chatHistory.scrollTop = chatHistory.scrollHeight;
+  if (available <= 0) {
+    showNoUnits();
+    return;
+  }
+
+  startCall();
+});
+
+function startCall() {
+  if (isCallActive) return;
+
+  isCallActive = true;
+  isProcessing = false;
+  callGeneration++;
+
+  callBtn.textContent = i18n[currentLang].stopCall;
+  callBtn.classList.add('active');
+
+  startListening();
+}
+
+function stopCall() {
+  isCallActive = false;
+  isProcessing = false;
+  callGeneration++;
+
+  callBtn.textContent = i18n[currentLang].startCall;
+  callBtn.classList.remove('active');
+
+  cleanupAudio();
+
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+
+  orb.className = 'orb';
+  statusText.textContent = i18n[currentLang].callEnded;
+}
+
+function cleanupAudio() {
+  clearTimeout(silenceTimer);
+  silenceTimer = null;
+
+  if (mediaRecorder) {
+    mediaRecorder.onstop = null;
+
+    if (mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch (e) {}
     }
 
-    async function playText(btn, text) {
-      isProcessing = true;
-      cleanupAudio();
+    mediaRecorder = null;
+  }
 
-      if (currentAudio) {
-        currentAudio.pause();
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+    currentStream = null;
+  }
+
+  if (audioContext) {
+    if (audioContext.state !== 'closed') {
+      audioContext.close().catch(() => {});
+    }
+    audioContext = null;
+  }
+
+  analyser = null;
+  microphone = null;
+}
+
+async function startListening() {
+  if (!isCallActive || isProcessing) return;
+
+  if (balance !== null && balance <= 0) {
+    showNoUnits();
+    return;
+  }
+
+  cleanupAudio();
+  speechDetected = false;
+  speechStartTime = 0;
+  audioChunks = [];
+
+  const generation = callGeneration;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true
+    });
+
+    if (!isCallActive || generation !== callGeneration) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+
+    currentStream = stream;
+    mediaRecorder = new MediaRecorder(stream);
+
+    audioContext = new (
+      window.AudioContext || window.webkitAudioContext
+    )();
+
+    analyser = audioContext.createAnalyser();
+    microphone = audioContext.createMediaStreamSource(stream);
+    microphone.connect(analyser);
+    analyser.fftSize = 512;
+
+    mediaRecorder.ondataavailable = event => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      handleSpeechEnd(generation);
+    };
+
+    mediaRecorder.start();
+
+    orb.className = 'orb recording';
+    statusText.textContent = i18n[currentLang].listening;
+
+    monitorSilence();
+  } catch (err) {
+    console.error('Ошибка микрофона:', err);
+    stopCall();
+    statusText.textContent = i18n[currentLang].micError;
+  }
+}
+
+function monitorSilence() {
+  if (!analyser) return;
+
+  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  function checkAudio() {
+    if (
+      !isCallActive ||
+      isProcessing ||
+      !mediaRecorder ||
+      mediaRecorder.state !== 'recording'
+    ) return;
+
+    analyser.getByteFrequencyData(dataArray);
+
+    let sum = 0;
+
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+
+    const average = sum / dataArray.length;
+
+    if (average > NOISE_THRESHOLD) {
+      if (!speechDetected) {
+        speechDetected = true;
+        speechStartTime = Date.now();
       }
 
-      orb.className = 'orb thinking';
-      statusText.textContent = 'Озвучиваю заново...';
-
-      try {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        const data = await res.json();
-        if (data.audio) {
-          await playAssistantAudio(data.audio);
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    } else if (speechDetected && !silenceTimer) {
+      silenceTimer = setTimeout(() => {
+        if (
+          mediaRecorder &&
+          mediaRecorder.state === 'recording'
+        ) {
+          mediaRecorder.stop();
         }
-      } catch (e) {
-        console.error('Ошибка TTS:', e);
-      } finally {
+      }, SILENCE_DELAY);
+    }
+
+    requestAnimationFrame(checkAudio);
+  }
+
+  checkAudio();
+}
+
+async function handleSpeechEnd(generation) {
+  if (!isCallActive || generation !== callGeneration) return;
+
+  const speechDuration = Date.now() - speechStartTime;
+
+  if (
+    !speechDetected ||
+    speechDuration < MIN_SPEECH_TIME ||
+    audioChunks.length === 0
+  ) {
+    if (isCallActive && !isProcessing) {
+      startListening();
+    }
+    return;
+  }
+
+  isProcessing = true;
+  orb.className = 'orb thinking';
+  statusText.textContent = i18n[currentLang].thinking;
+
+  const audioBlob = new Blob(audioChunks, {
+    type: 'audio/webm'
+  });
+
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'recording.webm');
+  formData.append('userId', userId);
+  formData.append('language', currentLang); // Передаем выбранный язык на бэкенд
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    120000
+  );
+
+  try {
+    const response = await fetch('/api/voice', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+
+    const data = await response.json();
+
+    if (Number.isInteger(data.balance)) {
+      updateBalance(data.balance);
+    }
+
+    if (response.status === 402) {
+      showNoUnits();
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Ошибка сервера');
+    }
+
+    if (!isCallActive || generation !== callGeneration) {
+      return;
+    }
+
+    if (data.userText && data.userText.trim()) {
+      addMessageToUI('user', data.userText);
+
+      if (data.text) {
+        addMessageToUI('assistant', data.text);
+      }
+
+      if (data.audio) {
+        await playAssistantAudio(data.audio);
+      }
+    }
+
+  } catch (err) {
+    console.error('Ошибка запроса:', err);
+
+    if (isCallActive && generation === callGeneration) {
+      statusText.textContent = i18n[currentLang].netError;
+    }
+  } finally {
+    clearTimeout(timeoutId);
+
+    await loadBalance();
+
+    if (generation === callGeneration) {
+      if (isCallActive && balance === 0) {
+        showNoUnits();
+      } else {
         resumeListening();
       }
     }
-  </script>
+  }
+}
+
+function resumeListening() {
+  isProcessing = false;
+
+  if (isCallActive) {
+    setTimeout(() => {
+      if (isCallActive && !isProcessing) {
+        startListening();
+      }
+    }, 300);
+  } else {
+    orb.className = 'orb';
+  }
+}
+
+function playAssistantAudio(base64Audio) {
+  return new Promise(resolve => {
+    isProcessing = true;
+    cleanupAudio();
+
+    orb.className = 'orb speaking';
+    statusText.textContent = i18n[currentLang].speaking;
+
+    if (currentAudio) {
+      currentAudio.pause();
+    }
+
+    const audio = new Audio(
+      'data:audio/mp3;base64,' + base64Audio
+    );
+
+    currentAudio = audio;
+
+    let finished = false;
+
+    const finishPlay = () => {
+      if (finished) return;
+      finished = true;
+
+      if (currentAudio === audio) {
+        currentAudio = null;
+      }
+
+      resolve();
+    };
+
+    audio.onended = finishPlay;
+    audio.onerror = finishPlay;
+
+    audio.play().catch(err => {
+      console.error('Ошибка воспроизведения:', err);
+      finishPlay();
+    });
+  });
+}
+
+function addMessageToUI(role, text) {
+  if (role !== 'user' && role !== 'assistant') return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg-wrapper ' + role;
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg ' + role;
+
+  const prefix = role === 'user' ? i18n[currentLang].you : i18n[currentLang].arp;
+  msgDiv.textContent = prefix + (text || '');
+
+  wrapper.appendChild(msgDiv);
+
+  if (role === 'assistant' && text) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'msg-actions';
+
+    const speakBtn = document.createElement('button');
+    speakBtn.className = 'action-icon';
+    speakBtn.textContent = '🔊';
+    speakBtn.title = i18n[currentLang].repeatListen;
+
+    speakBtn.addEventListener('click', () => {
+      playText(speakBtn, text);
+    });
+
+    actionsDiv.appendChild(speakBtn);
+    wrapper.appendChild(actionsDiv);
+  }
+
+  chatHistory.appendChild(wrapper);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+async function playText(btn, text) {
+  if (isProcessing) return;
+
+  btn.disabled = true;
+
+  const available = await loadBalance();
+
+  if (available === null) {
+    statusText.textContent = i18n[currentLang].balanceUnavailable;
+    btn.disabled = false;
+    return;
+  }
+
+  if (available <= 0) {
+    showNoUnits();
+    btn.disabled = false;
+    return;
+  }
+
+  if (isCallActive) {
+    stopCall();
+  }
+
+  isProcessing = true;
+  cleanupAudio();
+
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+
+  orb.className = 'orb thinking';
+  statusText.textContent = i18n[currentLang].speaking;
+
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text,
+        userId
+      })
+    });
+
+    const data = await res.json();
+
+    if (Number.isInteger(data.balance)) {
+      updateBalance(data.balance);
+    }
+
+    if (res.status === 402) {
+      showNoUnits();
+      return;
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Ошибка озвучки');
+    }
+
+    if (data.audio) {
+      await playAssistantAudio(data.audio);
+    }
+
+  } catch (err) {
+    console.error('Ошибка TTS:', err);
+    statusText.textContent = i18n[currentLang].ttsError;
+  } finally {
+    btn.disabled = false;
+    await loadBalance();
+
+    isProcessing = false;
+    orb.className = 'orb';
+
+    if (balance === 0) {
+      statusText.textContent = i18n[currentLang].noUnits;
+    } else if (!isCallActive) {
+      statusText.textContent = i18n[currentLang].initialStatus;
+    }
+  }
+}
+
+loadBalance();
+loadUserHistory();
+</script>
+
 </body>
 </html>
