@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -6,11 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import OpenAI from 'openai';
 import { SYSTEM_PROMPT } from './knowledgeBase.js';
-import {
-  getBalance,
-  createTestBalance,
-  spendUnit
-} from './balance.js';
+import { getBalance, spendUnit } from './balance-supabase.js';
+import { requireAuth } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,19 +57,6 @@ const openai = new OpenAI({
 
 const userHistories = new Map();
 const activeRequests = new Set();
-
-const TEST_MODE = process.env.ARP_TEST_MODE === 'true';
-
-function validUserId(id) {
-  return typeof id === 'string' &&
-    /^[a-zA-Z0-9_-]{1,100}$/.test(id);
-}
-
-function balanceForUser(userId) {
-  return TEST_MODE
-    ? createTestBalance(userId)
-    : getBalance(userId);
-}
 
 const fullSystemPrompt = `${SYSTEM_PROMPT}
 
@@ -263,44 +248,49 @@ function prepareTtsText(text) {
     '... Полный текст конспекта выведен на экран.';
 }
 
-// Проверка баланса
-app.get('/api/balance/:userId', (req, res) => {
-  const userId = req.params.userId;
-
-  if (!validUserId(userId)) {
-    return res.status(400).json({
-      error: 'Неверный userId'
+// Баланс только авторизованного пользователя
+app.get('/api/balance/:userId', requireAuth, async (req, res) => {
+  if (req.params.userId !== req.userId) {
+    return res.status(403).json({
+      error: 'Нет доступа к чужому балансу'
     });
   }
 
-  res.json({
-    balance: balanceForUser(userId)
-  });
+  try {
+    res.json({
+      balance: await getBalance(req.userId)
+    });
+  } catch (error) {
+    console.error('Ошибка получения баланса:', error);
+
+    res.status(503).json({
+      error: 'Баланс временно недоступен'
+    });
+  }
 });
 
-// История разговора
-app.get('/api/history/:userId', (req, res) => {
-  const userId = req.params.userId;
-
-  if (!validUserId(userId)) {
-    return res.status(400).json({
-      error: 'Неверный userId'
+// История разговора текущего пользователя
+app.get('/api/history/:userId', requireAuth, (req, res) => {
+  if (req.params.userId !== req.userId) {
+    return res.status(403).json({
+      error: 'Нет доступа к чужой истории'
     });
   }
 
   res.json({
-    history: userHistories.get(userId) || []
+    history: userHistories.get(req.userId) || []
   });
 });
 
 // Основной голосовой запрос
 app.post(
   '/api/voice',
+  requireAuth,
   upload.single('audio'),
   async (req, res) => {
     const filePath = req.file?.path;
-    const userId = req.body?.userId;
-    const userLang = req.body?.language || 'ru'; // Принимаем язык от клиента (по умолчанию 'ru')
+    const userId = req.userId;
+    const userLang = req.body?.language || 'ru';
     let locked = false;
 
     try {
@@ -310,13 +300,7 @@ app.post(
         });
       }
 
-      if (!validUserId(userId)) {
-        return res.status(400).json({
-          error: 'Неверный userId'
-        });
-      }
-
-      if (balanceForUser(userId) < 1) {
+      if (await getBalance(userId) < 1) {
         return res.status(402).json({
           error: 'Единицы закончились',
           balance: 0
@@ -326,7 +310,7 @@ app.post(
       if (activeRequests.has(userId)) {
         return res.status(409).json({
           error: 'Предыдущий запрос ещё обрабатывается',
-          balance: getBalance(userId)
+          balance: await getBalance(userId)
         });
       }
 
@@ -346,7 +330,7 @@ app.post(
         await openai.audio.transcriptions.create({
           file: audioFile,
           model: 'whisper-1',
-          language: userLang // Указываем whisper язык для более точного распознавания
+          language: userLang
         });
 
       const userText =
@@ -358,14 +342,13 @@ app.post(
           userText: '',
           text: '',
           audio: null,
-          balance: getBalance(userId)
+          balance: await getBalance(userId)
         });
       }
 
       const oldHistory =
         userHistories.get(userId) || [];
 
-      // Формируем языковую инструкцию для модели
       const languageInstruction = (userLang === 'en')
         ? "IMPORTANT: Respond strictly in English. Follow the 6-step ARP framework."
         : "ВАЖНО: Отвечай строго на русском языке. Следуй 6-шаговому фреймворку ARP.";
@@ -420,10 +403,10 @@ app.post(
       }
 
       // Списание после успешного ответа
-      if (!spendUnit(userId)) {
+      if (!(await spendUnit(userId))) {
         return res.status(402).json({
           error: 'Единицы закончились',
-          balance: getBalance(userId)
+          balance: await getBalance(userId)
         });
       }
 
@@ -448,7 +431,7 @@ app.post(
         userText,
         text: assistantText,
         audio: base64Audio,
-        balance: getBalance(userId)
+        balance: await getBalance(userId)
       });
 
     } catch (error) {
@@ -459,10 +442,7 @@ app.post(
       );
 
       res.status(500).json({
-        error: 'Ошибка обработки запроса',
-        balance: validUserId(userId)
-          ? getBalance(userId)
-          : undefined
+        error: 'Ошибка обработки запроса'
       });
 
     } finally {
@@ -478,14 +458,9 @@ app.post(
 );
 
 // Повторная озвучка
-app.post('/api/tts', async (req, res) => {
-  const { text, userId } = req.body || {};
-
-  if (!validUserId(userId)) {
-    return res.status(400).json({
-      error: 'Неверный userId'
-    });
-  }
+app.post('/api/tts', requireAuth, async (req, res) => {
+  const { text } = req.body || {};
+  const userId = req.userId;
 
   if (
     typeof text !== 'string' ||
@@ -494,13 +469,6 @@ app.post('/api/tts', async (req, res) => {
   ) {
     return res.status(400).json({
       error: 'Неверный текст'
-    });
-  }
-
-  if (balanceForUser(userId) < 1) {
-    return res.status(402).json({
-      error: 'Единицы закончились',
-      balance: 0
     });
   }
 
@@ -513,29 +481,36 @@ app.post('/api/tts', async (req, res) => {
   activeRequests.add(userId);
 
   try {
-    const mp3 =
-      await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: prepareTtsText(text)
+    const balance = await getBalance(userId);
+
+    if (balance < 1) {
+      return res.status(402).json({
+        error: 'Единицы закончились',
+        balance
       });
+    }
+
+    const mp3 = await openai.audio.speech.create({
+      model: 'tts-1',
+      voice: 'alloy',
+      input: prepareTtsText(text)
+    });
 
     const audio = Buffer.from(
       await mp3.arrayBuffer()
     ).toString('base64');
 
-    // Единица списывается только
-    // после успешного озвучивания
-    if (!spendUnit(userId)) {
+    // Списание только после успешного озвучивания
+    if (!(await spendUnit(userId))) {
       return res.status(402).json({
         error: 'Единицы закончились',
-        balance: getBalance(userId)
+        balance: await getBalance(userId)
       });
     }
 
-    res.json({
+    return res.json({
       audio,
-      balance: getBalance(userId)
+      balance: await getBalance(userId)
     });
 
   } catch (error) {
@@ -545,9 +520,8 @@ app.post('/api/tts', async (req, res) => {
       error.message
     );
 
-    res.status(500).json({
-      error: 'Ошибка генерации озвучки',
-      balance: getBalance(userId)
+    return res.status(500).json({
+      error: 'Ошибка генерации озвучки'
     });
 
   } finally {
@@ -558,10 +532,5 @@ app.post('/api/tts', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(
-    `Сервер запущен на порту ${PORT}`
-  );
-  console.log(
-    `Тестовый режим: ${TEST_MODE}`
-  );
+  console.log(`Сервер запущен на порту ${PORT}`);
 });
