@@ -1,373 +1,528 @@
-﻿<!DOCTYPE html>
+
+<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ARP Voice Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голосовой АРП</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
+* { box-sizing: border-box; }
 body {
+  margin: 0;
   background: #0d0f12;
-  color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, sans-serif;
-  height: 100vh;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+.hidden { display: none !important; }
+
+header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: space-between;
-  padding: 20px;
+  align-items: center;
+  padding: 14px;
+  max-width: 700px;
+  margin: auto;
+}
+.lang-btn, .secondary-btn {
+  background: #252b35;
+  color: white;
+  border: 1px solid #485064;
+  border-radius: 9px;
+  padding: 9px 13px;
+}
+.lang-btn.active { background: #2563eb; }
+#accountEmail {
+  color: #aab6ca;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
-.top-bar {
+.auth-box {
+  max-width: 390px;
+  margin: 50px auto;
+  padding: 25px;
+  border: 1px solid #354052;
+  border-radius: 18px;
+  background: #171b23;
+}
+.auth-box h2 { margin-top: 0; }
+.auth-box input {
+  display: block;
   width: 100%;
-  max-width: 600px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  padding: 13px;
+  margin: 12px 0;
+  background: #0d0f12;
+  border: 1px solid #566075;
+  border-radius: 9px;
+  color: white;
 }
-
-.lang-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #9ca3af;
-  padding: 6px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.lang-btn.active {
+.auth-box button {
+  width: 100%;
+  padding: 13px;
+  margin-top: 9px;
+  border: none;
+  border-radius: 9px;
   background: #2563eb;
   color: white;
-  border-color: #2563eb;
+}
+.auth-box .secondary-btn {
+  background: #343c4b;
+}
+#authMessage {
+  margin-top: 14px;
+  color: #c4d5ee;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
-.main-container {
+#appArea {
+  height: calc(100dvh - 70px);
+  max-width: 700px;
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
-  width: 100%;
-  max-width: 600px;
-  margin-top: 10px;
+  padding: 15px;
 }
-
 .orb {
-  width: 140px;
-  height: 140px;
+  width: 125px;
+  height: 125px;
   border-radius: 50%;
   background: radial-gradient(circle, #00d2ff, #0072ff);
-  box-shadow: 0 0 50px rgba(0,210,255,.4);
-  transition: all .3s ease;
-  flex-shrink: 0;
+  box-shadow: 0 0 50px #0072ff66;
+  margin: 15px auto;
 }
-
 .orb.recording {
   background: radial-gradient(circle, #ff416c, #ff4b2b);
-  box-shadow: 0 0 70px rgba(255,65,108,.7);
 }
-
 .orb.thinking {
   background: radial-gradient(circle, #f7b731, #ffa801);
-  box-shadow: 0 0 60px rgba(247,183,49,.6);
-  animation: pulse 1.5s infinite alternate;
+  animation: pulse 1s infinite alternate;
 }
-
 .orb.speaking {
   background: radial-gradient(circle, #00ffcc, #0088ff);
-  box-shadow: 0 0 80px rgba(0,255,204,.8);
-  animation: pulse .8s infinite alternate;
+  animation: pulse .7s infinite alternate;
 }
-
 @keyframes pulse {
-  from { transform: scale(1); }
-  to { transform: scale(1.06); }
+  to { transform: scale(1.07); }
 }
-
-.status {
-  font-size: 1.05rem;
-  color: #a0a5b5;
+#status {
+  color: #aab6ca;
   text-align: center;
+  margin: 12px;
 }
-
-.balance {
-  border: 1px solid rgba(255,255,255,.15);
+#balance {
+  border: 1px solid #465065;
   border-radius: 25px;
-  padding: 10px 18px;
+  padding: 10px 17px;
   color: #93c5fd;
-  font-size: .95rem;
 }
+#balance.empty { color: #fca5a5; }
 
-.balance.empty {
-  color: #fca5a5;
-  border-color: #dc2626;
-}
-
-.chat-history {
+#chatHistory {
   width: 100%;
-  max-width: 600px;
-  flex-grow: 1;
+  flex: 1;
   overflow-y: auto;
-  margin: 15px 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-right: 5px;
+  gap: 13px;
+  padding: 15px 0;
 }
-
 .msg-wrapper {
+  max-width: 85%;
   display: flex;
   flex-direction: column;
-  max-width: 85%;
 }
-
 .msg-wrapper.user { align-self: flex-end; }
 .msg-wrapper.assistant { align-self: flex-start; }
-
 .msg {
-  padding: 12px 16px;
+  padding: 12px 15px;
   border-radius: 14px;
-  font-size: .95rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
+  line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-
-.msg.user {
-  background: #2563eb;
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
+.msg.user { background: #2563eb; }
 .msg.assistant {
-  background: rgba(255,255,255,.08);
-  color: #e5e7eb;
-  border-bottom-left-radius: 4px;
-  border: 1px solid rgba(255,255,255,.1);
+  background: #252a34;
+  border: 1px solid #3b4350;
 }
-
-.msg-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 0 4px;
-}
-
 .action-icon {
   background: none;
   border: none;
-  color: #9ca3af;
-  cursor: pointer;
-  font-size: .95rem;
-  padding: 4px;
+  color: #cbd5e1;
+  padding: 8px;
+  align-self: flex-start;
 }
-
-.action-icon:hover { color: white; }
-.action-icon:disabled { opacity: .4; cursor: wait; }
-
 .controls {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  padding: 10px;
 }
-
-.main-btn {
+#callBtn {
+  padding: 16px 32px;
+  border: none;
+  border-radius: 30px;
   background: #2563eb;
   color: white;
-  border: none;
-  padding: 16px 36px;
-  font-size: 1.05rem;
-  font-weight: 600;
-  border-radius: 30px;
-  cursor: pointer;
+  font-weight: bold;
 }
-
-.main-btn.active { background: #dc2626; }
-.main-btn:hover { opacity: .9; }
-.main-btn:disabled { opacity: .5; cursor: wait; }
+#callBtn.active { background: #dc2626; }
+button:disabled { opacity: .5; cursor: wait; }
 </style>
 </head>
 
 <body>
-
-<div class="top-bar">
-  <button id="langRu" class="lang-btn active" onclick="setLanguage('ru')">РУС</button>
-  <button id="langEn" class="lang-btn" onclick="setLanguage('en')">ENG</button>
-</div>
-
-<div class="main-container">
-  <div id="orb" class="orb"></div>
-  <div id="status" class="status">
-    Нажмите для начала разговора
+<header>
+  <div>
+    <button id="langRu" class="lang-btn active">РУС</button>
+    <button id="langEn" class="lang-btn">ENG</button>
   </div>
-  <div id="balance" class="balance">
-    Проверяем баланс...
+  <div>
+    <span id="accountEmail"></span>
+    <button id="signOutBtn" class="secondary-btn hidden">
+      Выйти
+    </button>
   </div>
-</div>
+</header>
 
-<div id="chatHistory" class="chat-history"></div>
-
-<div class="controls">
-  <button id="callBtn" class="main-btn">
-    Начать разговор
+<section id="authPanel" class="auth-box">
+  <h2>Голосовой АРП</h2>
+  <p>Войдите или зарегистрируйтесь</p>
+  <form id="authForm">
+    <input id="authEmail" type="email"
+      placeholder="Электронная почта"
+      autocomplete="email" required>
+    <input id="authPassword" type="password"
+      placeholder="Пароль (минимум 8 символов)"
+      autocomplete="current-password" required>
+    <button type="submit">Войти</button>
+  </form>
+  <button id="signUpBtn" class="secondary-btn">
+    Зарегистрироваться
   </button>
-</div>
+  <p id="authMessage"></p>
+</section>
 
-<script>
-let userId = localStorage.getItem('arp_user_id');
+<main id="appArea" class="hidden">
+  <div id="orb" class="orb"></div>
+  <div id="status">Нажмите для начала разговора</div>
+  <div id="balance">Проверяем баланс...</div>
+  <div id="chatHistory"></div>
+  <div class="controls">
+    <button id="callBtn">Начать разговор</button>
+  </div>
+</main>
 
-if (!userId) {
-  userId = 'user_' + Math.random().toString(36).slice(2, 11);
-  localStorage.setItem('arp_user_id', userId);
-}
+<script type="module">
+import { createClient } from
+  'https://esm.sh/@supabase/supabase-js@2';
 
+const $ = id => document.getElementById(id);
+
+const authPanel = $('authPanel');
+const appArea = $('appArea');
+const authMessage = $('authMessage');
+const orb = $('orb');
+const statusText = $('status');
+const balanceDiv = $('balance');
+const chatHistory = $('chatHistory');
+const callBtn = $('callBtn');
+
+let supabase;
+let userId = null;
+let balance = null;
 let currentLang = localStorage.getItem('arp_lang') || 'ru';
 
-// Объявляем элементы DOM в самом начале, чтобы избежать ошибок
-const orb = document.getElementById('orb');
-const statusText = document.getElementById('status');
-const chatHistory = document.getElementById('chatHistory');
-const callBtn = document.getElementById('callBtn');
-const balanceDiv = document.getElementById('balance');
-
-const i18n = {
-  ru: {
-    startCall: 'Начать разговор',
-    stopCall: 'Завершить разговор',
-    initialStatus: 'Нажмите для начала разговора',
-    checkingBalance: 'Проверяем баланс...',
-    balanceUnits: 'Осталось единиц: ',
-    balanceUnavailable: 'Баланс недоступен',
-    noUnits: 'Единицы закончились. Для продолжения нужно пополнить баланс.',
-    listening: 'Слушаю вас... Говорите',
-    thinking: 'Думаю и обрабатываю...',
-    speaking: 'Ассистент говорит...',
-    callEnded: 'Разговор завершён',
-    micError: 'Ошибка доступа к микрофону',
-    netError: 'Ошибка обработки. Попробуйте ещё раз.',
-    ttsError: 'Ошибка повторной озвучки',
-    repeatListen: 'Прослушать повторно',
-    you: 'Вы: ',
-    arp: 'ARP: '
-  },
-  en: {
-    startCall: 'Start Conversation',
-    stopCall: 'End Conversation',
-    initialStatus: 'Click to start conversation',
-    checkingBalance: 'Checking balance...',
-    balanceUnits: 'Units remaining: ',
-    balanceUnavailable: 'Balance unavailable',
-    noUnits: 'Units ran out. Please top up your balance to continue.',
-    listening: 'Listening... Speak now',
-    thinking: 'Thinking and processing...',
-    speaking: 'Assistant is speaking...',
-    callEnded: 'Conversation ended',
-    micError: 'Microphone access error',
-    netError: 'Processing error. Please try again.',
-    ttsError: 'TTS playback error',
-    repeatListen: 'Listen again',
-    you: 'You: ',
-    arp: 'ARP: '
-  }
-};
-
-function setLanguage(lang) {
-  currentLang = lang;
-  localStorage.setItem('arp_lang', lang);
-
-  document.getElementById('langRu').classList.toggle('active', lang === 'ru');
-  document.getElementById('langEn').classList.toggle('active', lang === 'en');
-
-  if (!isCallActive && !isProcessing) {
-    statusText.textContent = i18n[currentLang].initialStatus;
-    callBtn.textContent = i18n[currentLang].startCall;
-  }
-  
-  if (balance !== null) {
-    balanceDiv.textContent = i18n[currentLang].balanceUnits + balance;
-  }
-}
-
-let balance = null;
 let mediaRecorder = null;
 let currentStream = null;
-let audioChunks = [];
-let isCallActive = false;
-let currentAudio = null;
 let audioContext = null;
 let analyser = null;
-let microphone = null;
+let audioChunks = [];
+let currentAudio = null;
 let silenceTimer = null;
+
+let isCallActive = false;
+let isProcessing = false;
 let speechDetected = false;
 let speechStartTime = 0;
-let isProcessing = false;
 let callGeneration = 0;
 
 const NOISE_THRESHOLD = 12;
 const SILENCE_DELAY = 1000;
 const MIN_SPEECH_TIME = 500;
 
-// Применяем язык сразу после инициализации элементов
-setLanguage(currentLang);
+const translations = {
+  ru: {
+    start: 'Начать разговор',
+    stop: 'Завершить разговор',
+    ready: 'Нажмите для начала разговора',
+    listening: 'Слушаю вас... Говорите',
+    thinking: 'Думаю и обрабатываю...',
+    speaking: 'Ассистент говорит...',
+    ended: 'Разговор завершён',
+    units: 'Осталось единиц: ',
+    noUnits: 'Единицы закончились',
+    unavailable: 'Баланс недоступен',
+    micError: 'Ошибка доступа к микрофону',
+    error: 'Ошибка обработки. Попробуйте ещё раз.',
+    repeat: 'Прослушать повторно',
+    you: 'Вы: ',
+    arp: 'АРП: '
+  },
+  en: {
+    start: 'Start Conversation',
+    stop: 'End Conversation',
+    ready: 'Click to start conversation',
+    listening: 'Listening... Speak now',
+    thinking: 'Thinking and processing...',
+    speaking: 'Assistant is speaking...',
+    ended: 'Conversation ended',
+    units: 'Units remaining: ',
+    noUnits: 'No units remaining',
+    unavailable: 'Balance unavailable',
+    micError: 'Microphone access error',
+    error: 'Processing error. Please try again.',
+    repeat: 'Listen again',
+    you: 'You: ',
+    arp: 'ARP: '
+  }
+};
+
+function t(key) {
+  return translations[currentLang][key];
+}
+
+function setLanguage(lang) {
+  currentLang = lang;
+  localStorage.setItem('arp_lang', lang);
+
+  $('langRu').classList.toggle('active', lang === 'ru');
+  $('langEn').classList.toggle('active', lang === 'en');
+
+  if (!isCallActive && !isProcessing) {
+    statusText.textContent = t('ready');
+    callBtn.textContent = t('start');
+  }
+
+  if (balance !== null) {
+    updateBalance(balance);
+  }
+}
+
+$('langRu').onclick = () => setLanguage('ru');
+$('langEn').onclick = () => setLanguage('en');
 
 function updateBalance(value) {
   if (!Number.isInteger(value) || value < 0) return;
-
   balance = value;
-  balanceDiv.textContent = i18n[currentLang].balanceUnits + value;
+  balanceDiv.textContent = t('units') + value;
   balanceDiv.classList.toggle('empty', value === 0);
 }
 
+async function authHeaders(extra = {}) {
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error || !data.session?.access_token) {
+    throw new Error('Требуется вход в аккаунт');
+  }
+
+  return {
+    ...extra,
+    Authorization: 'Bearer ' + data.session.access_token
+  };
+}
+
 async function loadBalance() {
+  if (!userId) return null;
+
   try {
-    const res = await fetch(
+    const response = await fetch(
       '/api/balance/' + encodeURIComponent(userId),
-      { cache: 'no-store' }
+      {
+        headers: await authHeaders(),
+        cache: 'no-store'
+      }
     );
 
-    if (!res.ok) throw new Error('Ошибка проверки баланса');
+    if (!response.ok) throw new Error('Ошибка баланса');
 
-    const data = await res.json();
+    const data = await response.json();
     updateBalance(data.balance);
     return data.balance;
-  } catch (err) {
-    console.error('Ошибка баланса:', err);
-    balanceDiv.textContent = i18n[currentLang].balanceUnavailable;
+  } catch (error) {
+    console.error(error);
     balance = null;
+    balanceDiv.textContent = t('unavailable');
     return null;
   }
 }
 
-async function loadUserHistory() {
+async function loadHistory() {
+  if (!userId) return;
+
   try {
-    const res = await fetch(
-      '/api/history/' + encodeURIComponent(userId)
+    const response = await fetch(
+      '/api/history/' + encodeURIComponent(userId),
+      { headers: await authHeaders() }
     );
 
-    if (!res.ok) return;
+    if (!response.ok) return;
 
-    const data = await res.json();
-
+    const data = await response.json();
     if (Array.isArray(data.history)) {
-      data.history.forEach(msg => {
-        addMessageToUI(msg.role, msg.content);
+      data.history.forEach(message => {
+        addMessage(message.role, message.content);
       });
     }
-  } catch (err) {
-    console.error('Ошибка истории:', err);
+  } catch (error) {
+    console.error(error);
   }
+}
+
+async function applySession(session) {
+  const nextId = session?.user?.id || null;
+  const changed = nextId !== userId;
+
+  if (changed) {
+    stopCall(false);
+    chatHistory.replaceChildren();
+    balance = null;
+  }
+
+  userId = nextId;
+
+  authPanel.classList.toggle('hidden', !!userId);
+  appArea.classList.toggle('hidden', !userId);
+  $('signOutBtn').classList.toggle('hidden', !userId);
+  $('accountEmail').textContent =
+    session?.user?.email || '';
+
+  if (userId && changed) {
+    await loadBalance();
+    await loadHistory();
+  }
+}
+
+$('authForm').addEventListener('submit', async event => {
+  event.preventDefault();
+
+  if (!supabase) return;
+
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value;
+
+  authMessage.textContent = 'Проверяем данные...';
+
+  const { data, error } =
+    await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+  if (error) {
+    authMessage.textContent = error.message;
+    return;
+  }
+
+  authMessage.textContent = '';
+  await applySession(data.session);
+});
+
+$('signUpBtn').onclick = async () => {
+  if (!supabase) return;
+
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value;
+
+  if (!email || password.length < 8) {
+    authMessage.textContent =
+      'Введите почту и пароль не короче 8 символов.';
+    return;
+  }
+
+  authMessage.textContent = 'Создаём аккаунт...';
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password
+  });
+
+  if (error) {
+    authMessage.textContent = error.message;
+    return;
+  }
+
+  if (data.session) {
+    await applySession(data.session);
+  } else {
+    authMessage.textContent =
+      'Проверьте почту, подтвердите регистрацию, затем войдите.';
+  }
+};
+
+$('signOutBtn').onclick = async () => {
+  stopCall(false);
+
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    statusText.textContent = error.message;
+  } else {
+    await applySession(null);
+  }
+};
+
+function cleanupAudio() {
+  clearTimeout(silenceTimer);
+  silenceTimer = null;
+
+  if (mediaRecorder) {
+    mediaRecorder.onstop = null;
+    if (mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch {}
+    }
+    mediaRecorder = null;
+  }
+
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+    currentStream = null;
+  }
+
+  if (audioContext) {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
+
+  analyser = null;
+}
+
+function stopCall(showStatus = true) {
+  isCallActive = false;
+  isProcessing = false;
+  callGeneration++;
+
+  cleanupAudio();
+
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+
+  orb.className = 'orb';
+  callBtn.classList.remove('active');
+  callBtn.textContent = t('start');
+
+  if (showStatus) statusText.textContent = t('ended');
 }
 
 function showNoUnits() {
   stopCall();
-  statusText.textContent = i18n[currentLang].noUnits;
+  statusText.textContent = t('noUnits');
 }
 
-callBtn.addEventListener('click', async () => {
+callBtn.onclick = async () => {
   if (isCallActive) {
     stopCall();
     return;
@@ -378,7 +533,7 @@ callBtn.addEventListener('click', async () => {
   callBtn.disabled = false;
 
   if (available === null) {
-    statusText.textContent = i18n[currentLang].balanceUnavailable;
+    statusText.textContent = t('unavailable');
     return;
   }
 
@@ -387,70 +542,14 @@ callBtn.addEventListener('click', async () => {
     return;
   }
 
-  startCall();
-});
-
-function startCall() {
-  if (isCallActive) return;
-
   isCallActive = true;
-  isProcessing = false;
   callGeneration++;
 
-  callBtn.textContent = i18n[currentLang].stopCall;
   callBtn.classList.add('active');
+  callBtn.textContent = t('stop');
 
-  startListening();
-}
-
-function stopCall() {
-  isCallActive = false;
-  isProcessing = false;
-  callGeneration++;
-
-  callBtn.textContent = i18n[currentLang].startCall;
-  callBtn.classList.remove('active');
-
-  cleanupAudio();
-
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
-  }
-
-  orb.className = 'orb';
-  statusText.textContent = i18n[currentLang].callEnded;
-}
-
-function cleanupAudio() {
-  clearTimeout(silenceTimer);
-  silenceTimer = null;
-
-  if (mediaRecorder) {
-    mediaRecorder.onstop = null;
-
-    if (mediaRecorder.state !== 'inactive') {
-      try { mediaRecorder.stop(); } catch (e) {}
-    }
-
-    mediaRecorder = null;
-  }
-
-  if (currentStream) {
-    currentStream.getTracks().forEach(track => track.stop());
-    currentStream = null;
-  }
-
-  if (audioContext) {
-    if (audioContext.state !== 'closed') {
-      audioContext.close().catch(() => {});
-    }
-    audioContext = null;
-  }
-
-  analyser = null;
-  microphone = null;
-}
+  await startListening();
+};
 
 async function startListening() {
   if (!isCallActive || isProcessing) return;
@@ -461,9 +560,10 @@ async function startListening() {
   }
 
   cleanupAudio();
+
+  audioChunks = [];
   speechDetected = false;
   speechStartTime = 0;
-  audioChunks = [];
 
   const generation = callGeneration;
 
@@ -485,7 +585,9 @@ async function startListening() {
     )();
 
     analyser = audioContext.createAnalyser();
-    microphone = audioContext.createMediaStreamSource(stream);
+    const microphone =
+      audioContext.createMediaStreamSource(stream);
+
     microphone.connect(analyser);
     analyser.fftSize = 512;
 
@@ -502,22 +604,22 @@ async function startListening() {
     mediaRecorder.start();
 
     orb.className = 'orb recording';
-    statusText.textContent = i18n[currentLang].listening;
+    statusText.textContent = t('listening');
 
     monitorSilence();
-  } catch (err) {
-    console.error('Ошибка микрофона:', err);
+  } catch (error) {
+    console.error(error);
     stopCall();
-    statusText.textContent = i18n[currentLang].micError;
+    statusText.textContent = t('micError');
   }
 }
 
 function monitorSilence() {
   if (!analyser) return;
 
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+  const values = new Uint8Array(analyser.frequencyBinCount);
 
-  function checkAudio() {
+  function check() {
     if (
       !isCallActive ||
       isProcessing ||
@@ -525,15 +627,12 @@ function monitorSilence() {
       mediaRecorder.state !== 'recording'
     ) return;
 
-    analyser.getByteFrequencyData(dataArray);
+    analyser.getByteFrequencyData(values);
 
     let sum = 0;
+    for (const value of values) sum += value;
 
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i];
-    }
-
-    const average = sum / dataArray.length;
+    const average = sum / values.length;
 
     if (average > NOISE_THRESHOLD) {
       if (!speechDetected) {
@@ -543,6 +642,7 @@ function monitorSilence() {
 
       clearTimeout(silenceTimer);
       silenceTimer = null;
+
     } else if (speechDetected && !silenceTimer) {
       silenceTimer = setTimeout(() => {
         if (
@@ -554,50 +654,47 @@ function monitorSilence() {
       }, SILENCE_DELAY);
     }
 
-    requestAnimationFrame(checkAudio);
+    requestAnimationFrame(check);
   }
 
-  checkAudio();
+  check();
 }
 
 async function handleSpeechEnd(generation) {
   if (!isCallActive || generation !== callGeneration) return;
 
-  const speechDuration = Date.now() - speechStartTime;
+  const duration = Date.now() - speechStartTime;
 
   if (
     !speechDetected ||
-    speechDuration < MIN_SPEECH_TIME ||
+    duration < MIN_SPEECH_TIME ||
     audioChunks.length === 0
   ) {
-    if (isCallActive && !isProcessing) {
-      startListening();
-    }
+    if (isCallActive) startListening();
     return;
   }
 
   isProcessing = true;
   orb.className = 'orb thinking';
-  statusText.textContent = i18n[currentLang].thinking;
+  statusText.textContent = t('thinking');
 
   const audioBlob = new Blob(audioChunks, {
-    type: 'audio/webm'
+    type: mediaRecorder?.mimeType || 'audio/webm'
   });
+
+  cleanupAudio();
 
   const formData = new FormData();
   formData.append('audio', audioBlob, 'recording.webm');
-  formData.append('userId', userId);
   formData.append('language', currentLang);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    120000
-  );
+  const timeout = setTimeout(() => controller.abort(), 120000);
 
   try {
     const response = await fetch('/api/voice', {
       method: 'POST',
+      headers: await authHeaders(),
       body: formData,
       signal: controller.signal
     });
@@ -617,68 +714,51 @@ async function handleSpeechEnd(generation) {
       throw new Error(data.error || 'Ошибка сервера');
     }
 
-    if (!isCallActive || generation !== callGeneration) {
-      return;
+    if (!isCallActive || generation !== callGeneration) return;
+
+    if (data.userText) {
+      addMessage('user', data.userText);
     }
 
-    if (data.userText && data.userText.trim()) {
-      addMessageToUI('user', data.userText);
-
-      if (data.text) {
-        addMessageToUI('assistant', data.text);
-      }
-
-      if (data.audio) {
-        await playAssistantAudio(data.audio);
-      }
+    if (data.text) {
+      addMessage('assistant', data.text);
     }
 
-  } catch (err) {
-    console.error('Ошибка запроса:', err);
+    if (data.audio) {
+      await playAssistantAudio(data.audio);
+    }
+
+  } catch (error) {
+    console.error(error);
 
     if (isCallActive && generation === callGeneration) {
-      statusText.textContent = i18n[currentLang].netError;
+      statusText.textContent = t('error');
     }
-  } finally {
-    clearTimeout(timeoutId);
 
+  } finally {
+    clearTimeout(timeout);
     await loadBalance();
 
     if (generation === callGeneration) {
+      isProcessing = false;
+
       if (isCallActive && balance === 0) {
         showNoUnits();
-      } else {
-        resumeListening();
+      } else if (isCallActive) {
+        setTimeout(() => startListening(), 300);
       }
     }
-  }
-}
-
-function resumeListening() {
-  isProcessing = false;
-
-  if (isCallActive) {
-    setTimeout(() => {
-      if (isCallActive && !isProcessing) {
-        startListening();
-      }
-    }, 300);
-  } else {
-    orb.className = 'orb';
   }
 }
 
 function playAssistantAudio(base64Audio) {
   return new Promise(resolve => {
-    isProcessing = true;
     cleanupAudio();
 
     orb.className = 'orb speaking';
-    statusText.textContent = i18n[currentLang].speaking;
+    statusText.textContent = t('speaking');
 
-    if (currentAudio) {
-      currentAudio.pause();
-    }
+    if (currentAudio) currentAudio.pause();
 
     const audio = new Audio(
       'data:audio/mp3;base64,' + base64Audio
@@ -688,120 +768,86 @@ function playAssistantAudio(base64Audio) {
 
     let finished = false;
 
-    const finishPlay = () => {
+    const finish = () => {
       if (finished) return;
       finished = true;
 
-      if (currentAudio === audio) {
-        currentAudio = null;
-      }
-
+      if (currentAudio === audio) currentAudio = null;
       resolve();
     };
 
-    audio.onended = finishPlay;
-    audio.onerror = finishPlay;
-
-    audio.play().catch(err => {
-      console.error('Ошибка воспроизведения:', err);
-      finishPlay();
-    });
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(finish);
   });
 }
 
-function addMessageToUI(role, text) {
-  if (role !== 'user' && role !== 'assistant') return;
+function addMessage(role, content) {
+  if (!['user', 'assistant'].includes(role)) return;
 
   const wrapper = document.createElement('div');
   wrapper.className = 'msg-wrapper ' + role;
 
-  const msgDiv = document.createElement('div');
-  msgDiv.className = 'msg ' + role;
+  const message = document.createElement('div');
+  message.className = 'msg ' + role;
+  message.textContent =
+    (role === 'user' ? t('you') : t('arp')) + content;
 
-  const prefix = role === 'user' ? i18n[currentLang].you : i18n[currentLang].arp;
-  msgDiv.textContent = prefix + (text || '');
+  wrapper.appendChild(message);
 
-  wrapper.appendChild(msgDiv);
+  if (role === 'assistant' && content) {
+    const repeat = document.createElement('button');
+    repeat.className = 'action-icon';
+    repeat.textContent = '🔊';
+    repeat.title = t('repeat');
 
-  if (role === 'assistant' && text) {
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'msg-actions';
-
-    const speakBtn = document.createElement('button');
-    speakBtn.className = 'action-icon';
-    speakBtn.textContent = '🔊';
-    speakBtn.title = i18n[currentLang].repeatListen;
-
-    speakBtn.addEventListener('click', () => {
-      playText(speakBtn, text);
-    });
-
-    actionsDiv.appendChild(speakBtn);
-    wrapper.appendChild(actionsDiv);
+    repeat.onclick = () => repeatSpeech(repeat, content);
+    wrapper.appendChild(repeat);
   }
 
   chatHistory.appendChild(wrapper);
   chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
-async function playText(btn, text) {
+async function repeatSpeech(button, text) {
   if (isProcessing) return;
 
-  btn.disabled = true;
+  button.disabled = true;
 
   const available = await loadBalance();
 
-  if (available === null) {
-    statusText.textContent = i18n[currentLang].balanceUnavailable;
-    btn.disabled = false;
+  if (available === null || available <= 0) {
+    if (available === 0) showNoUnits();
+    button.disabled = false;
     return;
   }
 
-  if (available <= 0) {
-    showNoUnits();
-    btn.disabled = false;
-    return;
-  }
-
-  if (isCallActive) {
-    stopCall();
-  }
+  if (isCallActive) stopCall();
 
   isProcessing = true;
-  cleanupAudio();
-
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
-  }
-
   orb.className = 'orb thinking';
-  statusText.textContent = i18n[currentLang].speaking;
 
   try {
-    const res = await fetch('/api/tts', {
+    const response = await fetch('/api/tts', {
       method: 'POST',
-      headers: {
+      headers: await authHeaders({
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text,
-        userId
-      })
+      }),
+      body: JSON.stringify({ text })
     });
 
-    const data = await res.json();
+    const data = await response.json();
 
     if (Number.isInteger(data.balance)) {
       updateBalance(data.balance);
     }
 
-    if (res.status === 402) {
+    if (response.status === 402) {
       showNoUnits();
       return;
     }
 
-    if (!res.ok) {
+    if (!response.ok) {
       throw new Error(data.error || 'Ошибка озвучки');
     }
 
@@ -809,27 +855,62 @@ async function playText(btn, text) {
       await playAssistantAudio(data.audio);
     }
 
-  } catch (err) {
-    console.error('Ошибка TTS:', err);
-    statusText.textContent = i18n[currentLang].ttsError;
-  } finally {
-    btn.disabled = false;
-    await loadBalance();
+  } catch (error) {
+    console.error(error);
+    statusText.textContent = t('error');
 
+  } finally {
+    button.disabled = false;
+    await loadBalance();
     isProcessing = false;
     orb.className = 'orb';
-
-    if (balance === 0) {
-      statusText.textContent = i18n[currentLang].noUnits;
-    } else if (!isCallActive) {
-      statusText.textContent = i18n[currentLang].initialStatus;
-    }
   }
 }
 
-loadBalance();
-loadUserHistory();
-</script>
+// Загрузка публичных настроек с сервера.
+// Секретный ключ в браузер не передаётся.
+async function initialize() {
+  setLanguage(currentLang);
 
+  try {
+    const response = await fetch('/api/public-config', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error('Настройки Supabase недоступны');
+    }
+
+    const config = await response.json();
+
+    if (!config.supabaseUrl || !config.supabasePublishableKey) {
+      throw new Error('Настройки Supabase не заполнены');
+    }
+
+    supabase = createClient(
+      config.supabaseUrl,
+      config.supabasePublishableKey
+    );
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setTimeout(() => applySession(session), 0);
+    });
+
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) throw error;
+
+    await applySession(data.session);
+
+  } catch (error) {
+    console.error(error);
+    authMessage.textContent =
+      'Не удалось подключить авторизацию. ' +
+      'Проверьте настройки сервера.';
+  }
+}
+
+initialize();
+</script>
 </body>
 </html>
