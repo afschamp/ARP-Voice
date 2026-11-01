@@ -39,7 +39,24 @@ const schoolKnowledge = loadKnowledgeFile('arp-school.txt');
 const studentKnowledge = loadKnowledgeFile('arp-student.txt');
 
 const app = express();
+app.get('/api/public-config', (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabasePublishableKey =
+    process.env.SUPABASE_PUBLISHABLE_KEY;
 
+  if (!supabaseUrl || !supabasePublishableKey) {
+    return res.status(503).json({
+      error: 'Supabase configuration is missing'
+    });
+  }
+
+  res.set('Cache-Control', 'no-store');
+
+  res.json({
+    supabaseUrl,
+    supabasePublishableKey
+  });
+});
 const upload = multer({
   dest: 'uploads/',
   limits: {
